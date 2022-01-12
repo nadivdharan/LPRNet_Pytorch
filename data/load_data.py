@@ -1,15 +1,12 @@
-from torch.utils.data import *
+# from torch.utils.data import *
+from torch.utils.data import Dataset
 from imutils import paths
 import numpy as np
 import random
 import cv2
 import os
 
-CHARS = ['京', '沪', '津', '渝', '冀', '晋', '蒙', '辽', '吉', '黑',
-         '苏', '浙', '皖', '闽', '赣', '鲁', '豫', '鄂', '湘', '粤',
-         '桂', '琼', '川', '贵', '云', '藏', '陕', '甘', '青', '宁',
-         '新',
-         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+CHARS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
          'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K',
          'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
          'W', 'X', 'Y', 'Z', 'I', 'O', '-'
@@ -36,7 +33,7 @@ class LPRDataLoader(Dataset):
 
     def __getitem__(self, index):
         filename = self.img_paths[index]
-        Image = cv2.imread(filename)
+        Image = cv2.imread(filename)  # BGR
         height, width, _ = Image.shape
         if height != self.img_size[1] or width != self.img_size[0]:
             Image = cv2.resize(Image, self.img_size)
@@ -51,18 +48,19 @@ class LPRDataLoader(Dataset):
             # one_hot_base[CHARS_DICT[c]] = 1
             label.append(CHARS_DICT[c])
 
-        if len(label) == 8:
-            if self.check(label) == False:
-                print(imgname)
-                assert 0, "Error label ^~^!!!"
+        # NOTE Skipping CCPD related assertions...
+        # if len(label) == 8:
+        #     if self.check(label) == False:
+        #         print(imgname)
+        #         assert 0, "Error label ^~^!!!"
 
         return Image, label, len(label)
 
     def transform(self, img):
         img = img.astype('float32')
         img -= 127.5
-        img *= 0.0078125
-        img = np.transpose(img, (2, 0, 1))
+        img *= 0.0078125 # * (1/128)
+        img = np.transpose(img, (2, 0, 1)) # H, W, C --> C, H, W
 
         return img
 

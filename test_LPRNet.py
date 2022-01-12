@@ -12,7 +12,7 @@ from model.LPRNet import build_lprnet
 # import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 import torch.nn.functional as F
-from torch.utils.data import *
+from torch.utils.data import DataLoader
 from torch import optim
 import torch.nn as nn
 import numpy as np
@@ -21,18 +21,25 @@ import torch
 import time
 import cv2
 import os
+from tqdm import tqdm
+
+
+MAX_TO_SHOW = 15
+
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--img_size', default=[94, 24], help='the image size')
+    parser.add_argument('--img_size', default=[96, 24], help='the image size')
     parser.add_argument('--test_img_dirs', default="./data/test", help='the test images path')
-    parser.add_argument('--dropout_rate', default=0, help='dropout rate.')
-    parser.add_argument('--lpr_max_len', default=8, help='license plate number max length.')
-    parser.add_argument('--test_batch_size', default=100, help='testing batch size.')
-    parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
+    parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
+    parser.add_argument('--lpr_max_len', default=10, type=int, help='license plate number max length.')
+    parser.add_argument('--test_batch_size', type=int, default=100, help='testing batch size.')
+    # parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
-    parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
-    parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
+    # parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
+    parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
+    # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
+    parser.add_argument('--show', action='store_true', help='show test image and its predict result or not.')
     parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
 
     args = parser.parse_args()
@@ -55,7 +62,7 @@ def collate_fn(batch):
 def test():
     args = get_parser()
 
-    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase=args.phase_train, class_num=len(CHARS), dropout_rate=args.dropout_rate)
+    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase='test', class_num=len(CHARS), dropout_rate=args.dropout_rate)
     device = torch.device("cuda:0" if args.cuda else "cpu")
     lprnet.to(device)
     print("Successful to build network!")
@@ -75,7 +82,7 @@ def test():
     finally:
         cv2.destroyAllWindows()
 
-def Greedy_Decode_Eval(Net, datasets, args):
+def Greedy_Decode_Eval(Net, datasets, args, debug=True):
     # TestNet = Net.eval()
     epoch_size = len(datasets) // args.test_batch_size
     batch_iterator = iter(DataLoader(datasets, args.test_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
@@ -83,8 +90,10 @@ def Greedy_Decode_Eval(Net, datasets, args):
     Tp = 0
     Tn_1 = 0
     Tn_2 = 0
+    showed = 0
     t1 = time.time()
-    for i in range(epoch_size):
+    # for _ in range(epoch_size):
+    for _ in tqdm(range(epoch_size)):
         # load train data
         images, labels, lengths = next(batch_iterator)
         start = 0
@@ -125,8 +134,12 @@ def Greedy_Decode_Eval(Net, datasets, args):
             preb_labels.append(no_repeat_blank_label)
         for i, label in enumerate(preb_labels):
             # show image and its predict label
-            if args.show:
-                show(imgs[i], label, targets[i])
+            if args.show and showed < MAX_TO_SHOW:
+                show(imgs[i], label, targets[i], ind=showed)
+                showed += 1
+            if debug:
+                print("Ground Truth", ''.join([CHARS[int(i)] for i in targets[i]]))
+                print("Predicted: ", ''.join([CHARS[int(i)] for i in label]))
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -139,11 +152,13 @@ def Greedy_Decode_Eval(Net, datasets, args):
     t2 = time.time()
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 
-def show(img, label, target):
-    img = np.transpose(img, (1, 2, 0))
+def show(img, label, target, ind=0):
+    import matplotlib.pyplot as plt
+    img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
     img *= 128.
     img += 127.5
     img = img.astype(np.uint8)
+    img = img[..., [2, 1, 0]]  # BGR --> RGB
 
     lb = ""
     for i in label:
@@ -155,12 +170,23 @@ def show(img, label, target):
     flag = "F"
     if lb == tg:
         flag = "T"
+    
+    # plt.figure(figsize=(img.shape[1], img.shape[0]))
+    plt.imshow(img)
+    plt.title(F'{lb}', size=28)
+    plt.axis('off')
+    save_dir = '/data/data/nadivd/ocr/preds/tests'
+    save_name = os.path.join(save_dir, F'{tg}.jpg')
+    print(F'Saving predictions to {save_name}')
+    plt.savefig(save_name)
+
     # img = cv2.putText(img, lb, (0,16), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (0, 0, 255), 1)
-    img = cv2ImgAddText(img, lb, (0, 0))
-    cv2.imshow("test", img)
-    print("target: ", tg, " ### {} ### ".format(flag), "predict: ", lb)
-    cv2.waitKey()
-    cv2.destroyAllWindows()
+    # img = cv2ImgAddText(img, lb, (0, 0), textColor='black', textSize=8)
+    # cv2.imwrite('/data/data/nadivd/ocr_predictions.jpg', img)
+    # cv2.imshow("test", img)
+    # print("target: ", tg, " ### {} ### ".format(flag), "predict: ", lb)
+    # cv2.waitKey()
+    # cv2.destroyAllWindows()
 
 def cv2ImgAddText(img, text, pos, textColor=(255, 0, 0), textSize=12):
     if (isinstance(img, np.ndarray)):  # detect opencv format or not
