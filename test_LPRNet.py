@@ -41,6 +41,7 @@ def get_parser():
     # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
     parser.add_argument('--show', action='store_true', help='show test image and its predict result or not.')
     parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
+    parser.add_argument('--save_folder', default='/data/data/nadivd/ocr/preds/tests', help='Location to save checkpoint models')
 
     args = parser.parse_args()
 
@@ -91,7 +92,7 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
     Tn_1 = 0
     Tn_2 = 0
     showed = 0
-    mean_Acc_2 = 0
+    precision = 0
     t1 = time.time()
     # for _ in range(epoch_size):
     for _ in tqdm(range(epoch_size)):
@@ -137,14 +138,18 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
         for i, label in enumerate(preb_labels):
             # show image and its predict label
             if args.show and showed < MAX_TO_SHOW:
-                show(imgs[i], label, targets[i], ind=showed)
+                show(imgs[i], label, targets[i], save_dir=args.save_dir)
                 showed += 1
             if debug:
                 print("Ground Truth", ''.join([CHARS[int(i)] for i in targets[i]]))
                 print("Predicted: ", ''.join([CHARS[int(i)] for i in label]))
+            
+            # Precision: mean true character recognition rate per sequence
             min_len = min(len(label), len(targets[i]))
             max_len = max(len(label), len(targets[i]))
             Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
+            
+            # Accuracy: mean true character recognition rate pre sequence
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -152,15 +157,17 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
                 Tp += 1
             else:
                 Tn_2 += 1
-        mean_Acc_2 += Acc_2
-    mean_Acc_2 /= epoch_size
+        precision += Acc_2
+    precision /= epoch_size
     Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
-    print("[Info] Test Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, mean_Acc_2, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Test Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     t2 = time.time()
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 
-def show(img, label, target, ind=0):
+def show(img, label, target, save_dir=None):
     import matplotlib.pyplot as plt
+    if not save_dir:
+        raise ValueError("Path to save predictions not provided")
     img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
     img *= 128.
     img += 127.5
@@ -180,12 +187,13 @@ def show(img, label, target, ind=0):
     
     # plt.figure(figsize=(img.shape[1], img.shape[0]))
     plt.imshow(img)
+    # plt.title(F'Predicted plate: {lb}', size=28)
     plt.title(F'{lb}', size=28)
     plt.axis('off')
-    save_dir = '/data/data/nadivd/ocr/preds/tests'
     save_name = os.path.join(save_dir, F'{tg}.jpg')
     print(F'Saving predictions to {save_name}')
     plt.savefig(save_name)
+    return save_name
 
     # img = cv2.putText(img, lb, (0,16), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (0, 0, 255), 1)
     # img = cv2ImgAddText(img, lb, (0, 0), textColor='black', textSize=8)

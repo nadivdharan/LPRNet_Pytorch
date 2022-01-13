@@ -13,6 +13,7 @@ from model.LPRNet import build_lprnet
 from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torch import optim
 import torch.nn as nn
 from torchsummary import summary
@@ -24,8 +25,11 @@ import os
 import yaml
 import pandas as pd
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import cv2
 
 
+FIGSIZE = (4, 4)
 log_dict = {'iteration': list(),
             'epoch': list(),
             'training loss': list(),
@@ -33,8 +37,8 @@ log_dict = {'iteration': list(),
             'test_loss': list(),
             'train accuracy': list(),
             'test accuracy': list(),
-            'mean_acc_train': list(),
-            'mean_acc_test': list()}
+            'prec_train': list(),
+            'prec_test': list()}
 
 def sparse_tuple_for_ctc(T_length, lengths):
     input_lengths = []
@@ -79,6 +83,7 @@ def get_parser():
     # parser.add_argument('--phase_train', default=True, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cuda', default=False, type=bool, help='Use cuda to train model')
+    parser.add_argument('--plot_predictions', action='store_true', help='Plot plate number predictions for some test images')
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
     parser.add_argument('--save_interval', default=2000, type=int, help='epoch interval for save model state dict')
     parser.add_argument('--test_interval', default=2000, type=int, help='epoch interval for evaluate')
@@ -148,6 +153,7 @@ def get_test_loss(net, dataset, batch_size, num_workers, T_length):
 
 def train():
     args = get_parser()
+    writer = SummaryWriter(args.save_folder)
 
     T_length = 21 # args.lpr_max_len
     epoch = 0 + args.resume_epoch
@@ -156,8 +162,8 @@ def train():
     best_acc_train = 0
     train_loss = 0
     test_loss = 0
-    mean_acc_test = 0
-    mean_acc_train = 0
+    prec_test = 0
+    prec_train = 0
 
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
@@ -279,24 +285,39 @@ def train():
         if (iteration + 1) % args.test_interval == 0:
             with torch.no_grad():
                 print('*** Evaluating on train set... ***')
-                acc_train, mean_acc_train, train_loss = Greedy_Decode_Eval(lprnet, train_dataset,
+                acc_train, prec_train, train_loss = Greedy_Decode_Eval(lprnet, train_dataset,
                                                            args.train_batch_size, args,
                                                            T_length)#, debug='train')
                 print('*** Evaluating on test set... ***')
-                acc, mean_acc_test, test_loss = Greedy_Decode_Eval(lprnet, test_dataset,
+                acc, prec_test, test_loss = Greedy_Decode_Eval(lprnet, test_dataset,
                                                     args.test_batch_size, args,
-                                                    T_length)#, debug='test')
+                                                    T_length, plot_pred=args.plot_predictions,
+                                                    figsize=FIGSIZE)#, debug='test')
             # lprnet.train() # should be switch to train mode
             best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
-            # log_training(args.save_folder, epoch, iteration, loss.item(), acc_train, acc)
             log_training(args.save_folder, iteration, epoch,
                          loss_val/(epoch_iter + 1),
                          train_loss, test_loss,
                          acc_train, acc,
-                         mean_acc_train, mean_acc_test)
+                         prec_train, prec_test)
+
+            writer.add_scalar('Loss/train (current iteration)', loss_val/(epoch_iter + 1), global_step=iteration)
+            writer.add_scalar('Loss/train', train_loss, global_step=iteration)
+            writer.add_scalar('Loss/test', test_loss, global_step=iteration)
+            writer.add_scalar('Accuracy/train', acc_train, global_step=iteration)
+            writer.add_scalar('Accuracy/test', acc, global_step=iteration)
+            writer.add_scalar('CSI/train', prec_train, global_step=iteration)
+            writer.add_scalar('CSI/test', prec_test, global_step=iteration)
+            for ii in range(16):
+                # test_img = plt.imread(os.path.join(args.save_folder, 'test_pred.jpg'))
+                test_img = plt.imread(os.path.join(args.save_folder, F'test_pred_{ii}.jpg'))
+                # test_img = torch.from_numpy(test_img).permute(2,0,1)# / 255
+                # test_img = test_img[[2,1,0], ...]
+                writer.add_image(F'Test Predictions/test_pred_{ii}', test_img, global_step=iteration, dataformats='HWC')
+
             if acc > best_acc:
                 print(F'New Best! {acc}')
-                torch.save(lprnet.state_dict(), args.save_folder + 'Best_LPRNet_model.pth')
+                torch.save(lprnet.state_dict(), os.path.join(args.save_folder, 'Best_LPRNet_model.pth'))
                 best_acc = acc
 
         if iteration % args.print_interval == 0:
@@ -306,19 +327,40 @@ def train():
                   + '|| Training Loss: %.4f|| ' % (loss_val / (epoch_iter + 1))
                   + '|| Train Loss: %.4f|| ' % train_loss
                   + '|| Tests Loss: %.4f|| ' % test_loss
-                  + '|| Mean Acc.: %.2f || ' % mean_acc_test
-                  + '|| Mean Train Acc.: %.2f || ' % mean_acc_train
+                  + '|| Mean Acc.: %.2f || ' % prec_test
+                  + '|| Mean Train Acc.: %.2f || ' % prec_train
                   + '|| Best Acc.: %.2f || ' % best_acc
                   + '|| Best Train Acc.: %.2f || ' % best_acc_train
                   + '|| Batch time: %.4f sec. ||' % (end_time - start_time) + 'LR: %.8f' % (lr))
     # final test
+    writer.close()
     print("Final test Accuracy:")
     Greedy_Decode_Eval(lprnet, test_dataset, args.test_batch_size, args, T_length)
 
     # save final parameters
-    torch.save(lprnet.state_dict(), args.save_folder + 'Final_LPRNet_model.pth')
+    torch.save(lprnet.state_dict(), os.path.join(args.save_folder, 'Final_LPRNet_model.pth'))
 
-def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#, mode='test'):
+
+def show_pred(ax, img, label, target):
+    img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
+    img *= 128.
+    img += 127.5
+    img = img.astype(np.uint8)
+    img = img[..., [2, 1, 0]]  # BGR --> RGB
+    lb = ""
+    for i in label:
+        lb += CHARS[i]
+    tg = ""
+    for j in target.tolist():
+        tg += CHARS[int(j)]
+
+    ax.imshow(img)
+    # ax.set_title(F'Predicted plate: {lb}')#, size=12)
+    ax.set_title(F'{lb}')#, size=12)
+    ax.axis('off')
+
+
+def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, plot_pred=True, figsize=(10,10)):#, mode='test'):
     # TestNet = Net.eval()
     # assert mode in ['test', 'train'], F"Unrecognized mode {mode}. Please choose from ['test', 'train']"
     Net.eval()
@@ -333,13 +375,13 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#,
     Tn_1 = 0
     Tn_2 = 0
     loss_val = 0
-    mean_Acc_2 = 0
+    precision = 0
     ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
     t1 = time.time()
-    # for i in range(epoch_size):
     for _ in tqdm(range(epoch_size)):
         # load train data
         images, labels, lengths = next(batch_iterator)
+        imgs = images.numpy().copy()
         start = 0
         targets = []
         for length in lengths:
@@ -357,7 +399,6 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#,
         prebs = Net(images)
 
         # get loss
-        # with torch.no_grad():
         log_probs = prebs.permute(2, 0, 1) # for ctc loss: T x N x C
         log_probs = log_probs.log_softmax(2)
         input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
@@ -389,14 +430,28 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#,
                 pre_c = c
             preb_labels.append(no_repeat_blank_label)
         
-        # accuracy
+        # Metrics calcs
         Acc_2 = 0
+        if plot_pred:
+            # fig, axs = plt.subplots(4, 4, gridspec_kw={'hspace':0, 'wspace':0}, figsize=figsize)
+            fig, axs = plt.subplots(figsize=figsize)
+            axs = np.ravel(axs)
         for i, label in enumerate(preb_labels):
+            label = [1,2,3,4,5,6,7]
+            if plot_pred:
+                if i < 16:
+                    # show_pred(axs[i], imgs[i], label, targets[i])
+                    show_pred(axs[0], imgs[i], label, targets[i])
+                # else:
+                    fig.tight_layout()
+                    # fig.savefig(os.path.join(args.save_folder, 'test_pred.jpg'))
+                    fig.savefig(os.path.join(args.save_folder, F'test_pred_{i}.jpg'))
+            # Precision: mean true character recognition rate per sequence
             min_len = min(len(label), len(targets[i]))
             max_len = max(len(label), len(targets[i]))
-            
             Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
 
+            # Accuracy: fraction of correctly predicted plates 
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -404,19 +459,19 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#,
                 Tp += 1
             else:
                 Tn_2 += 1
-        mean_Acc_2 += Acc_2
-    mean_Acc_2 /= epoch_size
+        precision += Acc_2
+    precision /= epoch_size
     try:
         Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
     except ZeroDivisionError:
         Acc = 0
-    print("[Info] Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, mean_Acc_2, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     t2 = time.time()
     print("[Info] Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
     
     Net.train()
 
-    return Acc, mean_Acc_2, loss_val
+    return Acc, precision, loss_val
 
 if __name__ == "__main__":
     train()
