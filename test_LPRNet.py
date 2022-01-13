@@ -82,7 +82,7 @@ def test():
     finally:
         cv2.destroyAllWindows()
 
-def Greedy_Decode_Eval(Net, datasets, args, debug=True):
+def Greedy_Decode_Eval(Net, datasets, args, debug=False):
     # TestNet = Net.eval()
     epoch_size = len(datasets) // args.test_batch_size
     batch_iterator = iter(DataLoader(datasets, args.test_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
@@ -91,6 +91,7 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=True):
     Tn_1 = 0
     Tn_2 = 0
     showed = 0
+    mean_Acc_2 = 0
     t1 = time.time()
     # for _ in range(epoch_size):
     for _ in tqdm(range(epoch_size)):
@@ -132,6 +133,7 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=True):
                 no_repeat_blank_label.append(c)
                 pre_c = c
             preb_labels.append(no_repeat_blank_label)
+        Acc_2 = 0
         for i, label in enumerate(preb_labels):
             # show image and its predict label
             if args.show and showed < MAX_TO_SHOW:
@@ -140,6 +142,9 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=True):
             if debug:
                 print("Ground Truth", ''.join([CHARS[int(i)] for i in targets[i]]))
                 print("Predicted: ", ''.join([CHARS[int(i)] for i in label]))
+            min_len = min(len(label), len(targets[i]))
+            max_len = max(len(label), len(targets[i]))
+            Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -147,8 +152,10 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=True):
                 Tp += 1
             else:
                 Tn_2 += 1
+        mean_Acc_2 += Acc_2
+    mean_Acc_2 /= epoch_size
     Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
-    print("[Info] Test Accuracy: {} [{}:{}:{}:{}]".format(Acc, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Test Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, mean_Acc_2, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     t2 = time.time()
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 

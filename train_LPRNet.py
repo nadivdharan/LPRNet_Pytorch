@@ -23,6 +23,7 @@ import time
 import os
 import yaml
 import pandas as pd
+from tqdm import tqdm
 
 
 log_dict = {'iteration': list(),
@@ -31,7 +32,9 @@ log_dict = {'iteration': list(),
             'train_loss': list(),
             'test_loss': list(),
             'train accuracy': list(),
-            'test accuracy': list()}
+            'test accuracy': list(),
+            'mean_acc_train': list(),
+            'mean_acc_test': list()}
 
 def sparse_tuple_for_ctc(T_length, lengths):
     input_lengths = []
@@ -77,8 +80,9 @@ def get_parser():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cuda', default=False, type=bool, help='Use cuda to train model')
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
-    parser.add_argument('--save_interval', default=2000, type=int, help='interval for save model state dict')
-    parser.add_argument('--test_interval', default=2000, type=int, help='interval for evaluate')
+    parser.add_argument('--save_interval', default=2000, type=int, help='epoch interval for save model state dict')
+    parser.add_argument('--test_interval', default=2000, type=int, help='epoch interval for evaluate')
+    parser.add_argument('--print_interval', default=2000, type=int, help='epoch interval for info print')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--weight_decay', default=2e-5, type=float, help='Weight decay for SGD')
     # parser.add_argument('--lr_schedule', default=[4, 8, 12, 14, 16], help='schedule for learning rate.')
@@ -120,6 +124,28 @@ def log_training(path, *args):
     df.to_csv(os.path.join(path, 'training.log'))
 
 
+def get_test_loss(net, dataset, batch_size, num_workers, T_length):
+    # compute the mean loss over the test set
+    net.eval()
+    epoch_size = len(dataset) // batch_size
+    batch_iterator = iter(DataLoader(dataset, batch_size,
+                                        shuffle=False, num_workers=num_workers,
+                                        collate_fn=collate_fn))
+    ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
+    loss_val = 0
+    for _ in range(epoch_size):
+        images, labels, lengths = next(batch_iterator)
+        input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
+        logits = net(images)
+        log_probs = logits.permute(2, 0, 1) # for ctc loss: T x N x C
+        # print(labels.shape)
+        log_probs = log_probs.log_softmax(2)
+        loss = ctc_loss(log_probs, labels, input_lengths=input_lengths, target_lengths=target_lengths)
+        loss_val += loss.item()
+
+    net.train()
+    return loss_val / epoch_size
+
 def train():
     args = get_parser()
 
@@ -130,6 +156,8 @@ def train():
     best_acc_train = 0
     train_loss = 0
     test_loss = 0
+    mean_acc_test = 0
+    mean_acc_train = 0
 
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
@@ -196,29 +224,20 @@ def train():
         yaml.dump(args, f, sort_keys=False)
 
     for iteration in range(start_iter, max_iter): # iteration = batch number
-        if iteration % epoch_size == 0:
+        epoch_iter = iteration % epoch_size
+        if epoch_iter == 0:
+            # if epoch > 0:
+            #     train_loss = loss_val / epoch_size  # mean loss per batch
+            #     with torch.no_grad():
+            #         test_loss = get_test_loss(lprnet, train_dataset,
+            #                                   args.train_batch_size, args.num_workers,
+            #                                   T_length)
+                
+
             # create batch iterator
             batch_iterator = iter(DataLoader(train_dataset, args.train_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
             loss_val = 0
             epoch += 1
-
-        if iteration !=0 and iteration % args.save_interval == 0:
-            torch.save(lprnet.state_dict(), args.save_folder + 'LPRNet_' + '_iteration_' + repr(iteration) + '.pth')
-
-        if (iteration + 1) % args.test_interval == 0:
-            print('*** Evaluating on test set... ***')
-            # import ipdb; ipdb.set_trace()
-            acc_train, train_loss = Greedy_Decode_Eval(lprnet, train_dataset, args, T_length)
-            lprnet.eval() # should be switch to test mode
-            acc, test_loss = Greedy_Decode_Eval(lprnet, test_dataset, args, T_length)
-            lprnet.train() # should be switch to train mode
-            best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
-            # log_training(args.save_folder, epoch, iteration, loss.item(), acc_train, acc)
-            log_training(args.save_folder, iteration, epoch, loss_val, train_loss, test_loss, acc_train, acc)
-            if acc > best_acc:
-                print(F'New Best! {acc}')
-                torch.save(lprnet.state_dict(), args.save_folder + 'Best_LPRNet_model.pth')
-                best_acc = acc
 
         start_time = time.time()
         # load train data
@@ -253,27 +272,59 @@ def train():
         optimizer.step()
         loss_val += loss.item()
         end_time = time.time()
-        if iteration % 100 == 0:
-            print('Epoch:' + repr(epoch) + ' || epochiter: ' + repr(iteration % epoch_size) + '/' + repr(epoch_size)
+       
+        if iteration !=0 and iteration % args.save_interval == 0:
+            torch.save(lprnet.state_dict(), os.path.join(args.save_folder , 'LPRNet_' + '_iteration_' + repr(iteration) + '.pth'))
+
+        if (iteration + 1) % args.test_interval == 0:
+            with torch.no_grad():
+                print('*** Evaluating on train set... ***')
+                acc_train, mean_acc_train, train_loss = Greedy_Decode_Eval(lprnet, train_dataset,
+                                                           args.train_batch_size, args,
+                                                           T_length)#, debug='train')
+                print('*** Evaluating on test set... ***')
+                acc, mean_acc_test, test_loss = Greedy_Decode_Eval(lprnet, test_dataset,
+                                                    args.test_batch_size, args,
+                                                    T_length)#, debug='test')
+            # lprnet.train() # should be switch to train mode
+            best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
+            # log_training(args.save_folder, epoch, iteration, loss.item(), acc_train, acc)
+            log_training(args.save_folder, iteration, epoch,
+                         loss_val/(epoch_iter + 1),
+                         train_loss, test_loss,
+                         acc_train, acc,
+                         mean_acc_train, mean_acc_test)
+            if acc > best_acc:
+                print(F'New Best! {acc}')
+                torch.save(lprnet.state_dict(), args.save_folder + 'Best_LPRNet_model.pth')
+                best_acc = acc
+
+        if iteration % args.print_interval == 0:
+        # if epoch %  args.print_epoch == 0:
+            print('Epoch:' + repr(epoch) + ' || epochiter: ' + repr(epoch_iter) + '/' + repr(epoch_size)
                   + '|| Totel iter ' + repr(iteration) + '|| Loss: %.4f|| ' % (loss.item())
-                  + '|| Train Loss: %.4f|| ' % (train_loss)
-                  + '|| Tests Loss: %.4f|| ' % (test_loss)
-                  + '|| Best Acc.: %.2f || ' % best_acc + '|| Best Train Acc.: %.2f || ' % best_acc_train
+                  + '|| Training Loss: %.4f|| ' % (loss_val / (epoch_iter + 1))
+                  + '|| Train Loss: %.4f|| ' % train_loss
+                  + '|| Tests Loss: %.4f|| ' % test_loss
+                  + '|| Mean Acc.: %.2f || ' % mean_acc_test
+                  + '|| Mean Train Acc.: %.2f || ' % mean_acc_train
+                  + '|| Best Acc.: %.2f || ' % best_acc
+                  + '|| Best Train Acc.: %.2f || ' % best_acc_train
                   + '|| Batch time: %.4f sec. ||' % (end_time - start_time) + 'LR: %.8f' % (lr))
     # final test
     print("Final test Accuracy:")
-    Greedy_Decode_Eval(lprnet, test_dataset, args, T_length)
+    Greedy_Decode_Eval(lprnet, test_dataset, args.test_batch_size, args, T_length)
 
     # save final parameters
     torch.save(lprnet.state_dict(), args.save_folder + 'Final_LPRNet_model.pth')
 
-def Greedy_Decode_Eval(Net, datasets, args, T_length):#, mode='test'):
+def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None):#, mode='test'):
     # TestNet = Net.eval()
     # assert mode in ['test', 'train'], F"Unrecognized mode {mode}. Please choose from ['test', 'train']"
-    # Net.eval()
+    Net.eval()
     
-    epoch_size = len(datasets) // args.test_batch_size
-    batch_iterator = iter(DataLoader(datasets, args.test_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
+    epoch_size = len(datasets) // batch_size
+    batch_iterator = iter(DataLoader(datasets, batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
     # batch_size = args.test_batch_size if 'test' in mode else args.train_batch_size
     # epoch_size = len(datasets) // batch_size
     # batch_iterator = iter(DataLoader(datasets, batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
@@ -282,9 +333,11 @@ def Greedy_Decode_Eval(Net, datasets, args, T_length):#, mode='test'):
     Tn_1 = 0
     Tn_2 = 0
     loss_val = 0
+    mean_Acc_2 = 0
     ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
     t1 = time.time()
-    for i in range(epoch_size):
+    # for i in range(epoch_size):
+    for _ in tqdm(range(epoch_size)):
         # load train data
         images, labels, lengths = next(batch_iterator)
         start = 0
@@ -304,14 +357,16 @@ def Greedy_Decode_Eval(Net, datasets, args, T_length):#, mode='test'):
         prebs = Net(images)
 
         # get loss
-        with torch.no_grad():
-            log_probs = prebs.permute(2, 0, 1) # for ctc loss: T x N x C
-            log_probs = log_probs.log_softmax(2)
-            input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
-            loss = ctc_loss(log_probs, labels, input_lengths=input_lengths, target_lengths=target_lengths)
-            # if loss.item() == np.inf:
-                # continue
-            loss_val += loss.item()
+        # with torch.no_grad():
+        log_probs = prebs.permute(2, 0, 1) # for ctc loss: T x N x C
+        log_probs = log_probs.log_softmax(2)
+        input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
+        loss = ctc_loss(log_probs, labels, input_lengths=input_lengths, target_lengths=target_lengths)
+        # if loss.item() == np.inf:
+            # continue
+        loss_val += loss.item() / epoch_size
+        if debug:
+            print(F"*** {debug} in eval : {loss.item()}, {loss_val}")
 
         # greedy decode
         prebs = prebs.cpu().detach().numpy()
@@ -335,7 +390,13 @@ def Greedy_Decode_Eval(Net, datasets, args, T_length):#, mode='test'):
             preb_labels.append(no_repeat_blank_label)
         
         # accuracy
+        Acc_2 = 0
         for i, label in enumerate(preb_labels):
+            min_len = min(len(label), len(targets[i]))
+            max_len = max(len(label), len(targets[i]))
+            
+            Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
+
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -343,15 +404,19 @@ def Greedy_Decode_Eval(Net, datasets, args, T_length):#, mode='test'):
                 Tp += 1
             else:
                 Tn_2 += 1
-
+        mean_Acc_2 += Acc_2
+    mean_Acc_2 /= epoch_size
     try:
         Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
     except ZeroDivisionError:
         Acc = 0
-    print("[Info] Accuracy: {} [{}:{}:{}:{}]".format(Acc, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, mean_Acc_2, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     t2 = time.time()
     print("[Info] Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
-    return Acc, loss_val
+    
+    Net.train()
+
+    return Acc, mean_Acc_2, loss_val
 
 if __name__ == "__main__":
     train()
