@@ -85,6 +85,7 @@ def test():
 
 def Greedy_Decode_Eval(Net, datasets, args, debug=False):
     # TestNet = Net.eval()
+    Net.eval()
     epoch_size = len(datasets) // args.test_batch_size
     batch_iterator = iter(DataLoader(datasets, args.test_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
 
