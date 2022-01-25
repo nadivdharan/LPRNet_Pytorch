@@ -91,6 +91,7 @@ def get_parser():
     parser.add_argument('--test_interval', default=2000, type=int, help='epoch interval for evaluate')
     parser.add_argument('--print_interval', default=2000, type=int, help='epoch interval for info print')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
+    parser.add_argument('--optimizer', default='rmsprop', type=str, help='optimization algorithm', choices=['sgd', 'rmsprop', 'adam'])
     parser.add_argument('--weight_decay', default=2e-5, type=float, help='Weight decay for SGD')
     # parser.add_argument('--lr_schedule', default=[4, 8, 12, 14, 16], help='schedule for learning rate.')
     # parser.add_argument('--lr_schedule', type=int, nargs='+', default=[1e9], help='schedule for learning rate.')
@@ -253,14 +254,25 @@ def train():
         print("initial net weights successful!")
 
     # define optimizer
-    # optimizer = optim.SGD(lprnet.parameters(), lr=args.learning_rate,
-                        #   momentum=args.momentum, weight_decay=args.weight_decay)
-    optimizer = optim.RMSprop(lprnet.parameters(), lr=args.learning_rate, alpha = 0.9, eps=1e-08,
-                         momentum=args.momentum, weight_decay=args.weight_decay)
+    if 'sgd' in args.optimizer:
+        optimizer = optim.SGD(lprnet.parameters(), lr=args.learning_rate,
+                              momentum=args.momentum, weight_decay=args.weight_decay)
+    elif 'rmsprop' in args.optimizer:
+        optimizer = optim.RMSprop(lprnet.parameters(), lr=args.learning_rate, alpha = 0.9, eps=1e-08,
+                                  momentum=args.momentum, weight_decay=args.weight_decay)
+    elif 'adam' in args.optimizer:
+        optimizer = optim.Adam(lprnet.parameters(), lr=args.learning_rate, betas = (0.9, 0.999), eps=1e-08,
+                               weight_decay=args.weight_decay)
     train_img_dirs = os.path.expanduser(args.train_img_dirs)
     test_img_dirs = os.path.expanduser(args.test_img_dirs)
+    print(f'loading train data...')
+    t0 = time.time()
     train_dataset = LPRDataLoader(train_img_dirs.split(','), args.img_size, args.lpr_max_len)
+    print('train data loaded ({%.2f} s)' % (time.time()-t0))
+    print(f'loading test data...')
+    t0 = time.time()
     test_dataset = LPRDataLoader(test_img_dirs.split(','), args.img_size, args.lpr_max_len)
+    print('test data loaded ({%.2f} s)' % (time.time()-t0))
 
     epoch_size = len(train_dataset) // args.train_batch_size # batches per epoch
     max_iter = args.max_epoch * epoch_size # max batches
@@ -274,7 +286,7 @@ def train():
 
     # save final parameters
     # torch.save(lprnet.state_dict(), args.save_folder + 'Final_LPRNet_model.pth')
-    print(summary(lprnet, (3,args.img_size[0],args.img_size[1])))
+    print(summary(lprnet, (3, args.img_size[1], args.img_size[0])))
     # import ipdb; ipdb.set_trace()
 
     with open(os.path.join(args.save_folder, 'opt.yaml'), 'w') as f:

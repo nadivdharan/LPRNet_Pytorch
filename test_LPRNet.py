@@ -144,6 +144,7 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
             if debug:
                 print("Ground Truth", ''.join([CHARS[int(i)] for i in targets[i]]))
                 print("Predicted: ", ''.join([CHARS[int(i)] for i in label]))
+                print('-------------------------------')
             
             # Precision: mean true character recognition rate per sequence
             min_len = min(len(label), len(targets[i]))
