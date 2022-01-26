@@ -32,15 +32,15 @@ import cv2
 FIGSIZE = (4, 4)
 log_dict = {'iteration': list(),
             'epoch': list(),
-            'training loss': list(),
-            'train_loss': list(),
-            'test_loss': list(),
-            'train accuracy': list(),
-            'test accuracy': list(),
-            'prec_train': list(),
-            'prec_test': list(),
-            'lv_norm_sim_train': list(),
-            'lv_norm_sim_test': list()}
+            'training loss': list(),      # Average batch loss during epoch
+            'train_loss': list(),         # Mean batch atch training loss
+            'test_loss': list(),          # Validation Loss
+            'train accuracy': list(),     # Training batch plate accuracy 
+            'test accuracy': list(),      # Validation plate accuracy
+            'prec_train': list(),         # Mean training batch character recocgnition rate
+            'prec_test': list(),          # Mean validation character recocgnition rate
+            'lv_norm_sim_train': list(),  # Training bacth normalized Levenshtein similarity
+            'lv_norm_sim_test': list()}   # Validation normalized Levenshtein similarity
 
 def sparse_tuple_for_ctc(T_length, lengths):
     input_lengths = []
@@ -84,7 +84,8 @@ def get_parser():
     parser.add_argument('--test_batch_size', type=int, default=120, help='testing batch size.')
     # parser.add_argument('--phase_train', default=True, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
-    parser.add_argument('--cuda', default=False, type=bool, help='Use cuda to train model')
+    # parser.add_argument('--cuda', default=False, type=bool, help='Use cuda to train model')
+    parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
     parser.add_argument('--plot_predictions', action='store_true', help='Plot plate number predictions for some test images')
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
     parser.add_argument('--save_interval', default=2000, type=int, help='epoch interval for save model state dict')
@@ -93,9 +94,9 @@ def get_parser():
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--optimizer', default='rmsprop', type=str, help='optimization algorithm', choices=['sgd', 'rmsprop', 'adam'])
     parser.add_argument('--weight_decay', default=2e-5, type=float, help='Weight decay for SGD')
-    # parser.add_argument('--lr_schedule', default=[4, 8, 12, 14, 16], help='schedule for learning rate.')
+    parser.add_argument('--lr_schedule', default=[4, 8, 12, 14, 16], help='schedule for learning rate.')
     # parser.add_argument('--lr_schedule', type=int, nargs='+', default=[1e9], help='schedule for learning rate.')
-    parser.add_argument('--lr_schedule', type=int, nargs='+', default=[10], help='schedule for learning rate.')
+    # parser.add_argument('--lr_schedule', type=int, nargs='+', default=[10], help='schedule for learning rate.')
     parser.add_argument('--save_folder', default='./weights/', help='Location to save checkpoint models')
     # parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
     parser.add_argument('--pretrained_model', default='', help='pretrained base model')
@@ -204,7 +205,7 @@ def train():
     args = get_parser()
     writer = SummaryWriter(args.save_folder)
 
-    T_length = 21 # args.lpr_max_len
+    T_length = 24 # args.lpr_max_len
     epoch = 0 + args.resume_epoch
     loss_val = 0
     best_acc = 0
@@ -530,6 +531,7 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
                     fig.tight_layout()
                     # fig.savefig(os.path.join(args.save_folder, 'test_pred.jpg'))
                     fig.savefig(os.path.join(args.save_folder, F'test_pred_{i}.jpg'))
+                    plt.close(fig)
             
             from strsimpy.jaro_winkler import JaroWinkler
             from strsimpy.normalized_levenshtein import NormalizedLevenshtein

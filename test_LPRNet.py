@@ -24,7 +24,7 @@ import os
 from tqdm import tqdm
 
 
-MAX_TO_SHOW = 15
+MAX_TO_SHOW = 50
 
 
 def get_parser():
@@ -41,7 +41,7 @@ def get_parser():
     # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
     parser.add_argument('--show', action='store_true', help='show test image and its predict result or not.')
     parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
-    parser.add_argument('--save_folder', default='/data/data/nadivd/ocr/preds/tests', help='Location to save checkpoint models')
+    parser.add_argument('--save_dir', default='./preds', help='Location to save checkpoint models')
 
     args = parser.parse_args()
 
