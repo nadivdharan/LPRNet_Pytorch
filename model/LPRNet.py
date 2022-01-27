@@ -54,15 +54,19 @@ class LPRNet(nn.Module):
                       downsample=downsample(64, 128, kernel_size=1, stride=1)),
 
             # s2
-            res_block(ch_in=128, ch_out=128, padding=1),
+            res_block(ch_in=128, ch_out=128, stride=2, padding=1,
+                      downsample=downsample(128, 128, kernel_size=1, stride=2)),
             res_block(ch_in=128, ch_out=256, padding=1,
                       downsample=downsample(128, 256, kernel_size=1, stride=1)),
             ) # (24 x 96)
         
         self.downsample1 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
-            # nn.BatchNorm2d(num_features=256),
-            # nn.ReLU(),
+            nn.BatchNorm2d(num_features=256),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
+            nn.BatchNorm2d(num_features=256),
+            nn.ReLU(),
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256)
             )
@@ -84,14 +88,17 @@ class LPRNet(nn.Module):
         self.downsample2 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
+            nn.BatchNorm2d(num_features=256),
             )
 
         self.stage3 = nn.Sequential(
             res_block(ch_in=256, ch_out=256, stride=2, padding=1,
                       downsample=downsample(256, 256, kernel_size=1, stride=2)),
-            res_block(ch_in=256, ch_out=256, padding=1,
-                    #   downsample=downsample(256, 512, kernel_size=1, stride=1)),
-            )
+            res_block(ch_in=256, ch_out=256, stride=2, padding=1,
+                      downsample=downsample(256, 256, kernel_size=1, stride=2)),
+            # )
 
             # # s2
             # res_block(ch_in=256, ch_out=256, padding=2),

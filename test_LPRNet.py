@@ -29,7 +29,7 @@ MAX_TO_SHOW = 50
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--img_size', default=[96, 24], help='the image size')
+    parser.add_argument('--img_size', default=[300, 75], help='the image size')
     parser.add_argument('--test_img_dirs', default="./data/test", help='the test images path')
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
     parser.add_argument('--lpr_max_len', default=10, type=int, help='license plate number max length.')
