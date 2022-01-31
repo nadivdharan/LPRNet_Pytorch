@@ -33,11 +33,14 @@ def get_parser():
     parser.add_argument('--test_img_dirs', default="./data/test", help='the test images path')
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
     parser.add_argument('--lpr_max_len', default=10, type=int, help='license plate number max length.')
-    parser.add_argument('--test_batch_size', type=int, default=100, help='testing batch size.')
+    parser.add_argument('--test_batch_size', type=int, default=1, help='testing batch size.')
     # parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     # parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
     parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
+    parser.add_argument('--drop', action='store_true', help='Use dropoutt')
+    parser.add_argument('--debug', action='store_true', help='Debug by printing predictions vs. labels')
+    parser.add_argument('--crop', default=20, type=int, help='Number of pixels cropped from left part of image')
     # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
     parser.add_argument('--show', action='store_true', help='show test image and its predict result or not.')
     parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
@@ -63,27 +66,27 @@ def collate_fn(batch):
 def test():
     args = get_parser()
 
-    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase='test', class_num=len(CHARS), dropout_rate=args.dropout_rate)
+    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase='test', class_num=len(CHARS), dropout_rate=args.dropout_rate, drop=args.drop)
     device = torch.device("cuda:0" if args.cuda else "cpu")
     lprnet.to(device)
     print("Successful to build network!")
 
     # load pretrained model
     if args.pretrained_model:
-        lprnet.load_state_dict(torch.load(args.pretrained_model))
+        lprnet.load_state_dict(torch.load(args.pretrained_model, map_location=torch.device(device)))
         print("load pretrained model successful!")
     else:
         print("[Error] Can't found pretrained mode, please check!")
         return False
 
     test_img_dirs = os.path.expanduser(args.test_img_dirs)
-    test_dataset = LPRDataLoader(test_img_dirs.split(','), args.img_size, args.lpr_max_len)
+    test_dataset = LPRDataLoader(test_img_dirs.split(','), args.img_size, args.lpr_max_len, train=False, crop=args.crop)
     try:
         Greedy_Decode_Eval(lprnet, test_dataset, args)
     finally:
         cv2.destroyAllWindows()
 
-def Greedy_Decode_Eval(Net, datasets, args, debug=False):
+def Greedy_Decode_Eval(Net, datasets, args):
     # TestNet = Net.eval()
     Net.eval()
     epoch_size = len(datasets) // args.test_batch_size
@@ -95,7 +98,6 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
     showed = 0
     precision = 0
     t1 = time.time()
-    # for _ in range(epoch_size):
     for _ in tqdm(range(epoch_size)):
         # load train data
         images, labels, lengths = next(batch_iterator)
@@ -123,6 +125,8 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
             preb_label = list()
             for j in range(preb.shape[1]):
                 preb_label.append(np.argmax(preb[:, j], axis=0))
+            if args.debug:
+                print("Ground Befor Decode", ''.join([CHARS[int(x)] for x in preb_label]))
             no_repeat_blank_label = list()
             pre_c = preb_label[0]
             if pre_c != len(CHARS) - 1:
@@ -141,9 +145,9 @@ def Greedy_Decode_Eval(Net, datasets, args, debug=False):
             if args.show and showed < MAX_TO_SHOW:
                 show(imgs[i], label, targets[i], save_dir=args.save_dir)
                 showed += 1
-            if debug:
-                print("Ground Truth", ''.join([CHARS[int(i)] for i in targets[i]]))
-                print("Predicted: ", ''.join([CHARS[int(i)] for i in label]))
+            if args.debug:
+                print("Ground Truth", ''.join([CHARS[int(x)] for x in targets[i]]))
+                print("Predicted:  ", ''.join([CHARS[int(x)] for x in label]))
                 print('-------------------------------')
             
             # Precision: mean true character recognition rate per sequence
