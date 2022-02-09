@@ -97,6 +97,7 @@ def Greedy_Decode_Eval(Net, datasets, args):
     Tn_2 = 0
     showed = 0
     precision = 0
+    lv_sim = 0 
     t1 = time.time()
     for _ in tqdm(range(epoch_size)):
         # load train data
@@ -140,11 +141,15 @@ def Greedy_Decode_Eval(Net, datasets, args):
                 pre_c = c
             preb_labels.append(no_repeat_blank_label)
         Acc_2 = 0
+        lv = 0
         for i, label in enumerate(preb_labels):
             # show image and its predict label
             if args.show and showed < MAX_TO_SHOW:
                 show(imgs[i], label, targets[i], save_dir=args.save_dir)
                 showed += 1
+            from strsimpy.normalized_levenshtein import NormalizedLevenshtein
+            lv_score = NormalizedLevenshtein().similarity(label, targets[i].tolist())
+            lv += lv_score
             if args.debug:
                 print("Ground Truth", ''.join([CHARS[int(x)] for x in targets[i]]))
                 print("Predicted:  ", ''.join([CHARS[int(x)] for x in label]))
@@ -163,10 +168,13 @@ def Greedy_Decode_Eval(Net, datasets, args):
                 Tp += 1
             else:
                 Tn_2 += 1
+        lv_sim += lv / len(preb_labels)
         precision += Acc_2
     precision /= epoch_size
+    lv_sim /= epoch_size
     Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
     print("[Info] Test Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Test Levenshtein Similarity: {}".format(lv_sim))
     t2 = time.time()
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 

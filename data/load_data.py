@@ -4,6 +4,7 @@ from imutils import paths
 import numpy as np
 import random
 import cv2
+from PIL import Image
 import os
 import imgaug.augmenters as iaa
 
@@ -50,6 +51,20 @@ def image_aug(img):
         ], random_order=True)
     ], random_order=True)
     return np.squeeze(seq(images=np.expand_dims(np.array(img, np.uint8), axis=0)))
+
+
+def pixelize(img, width, height, factors=(4, 5), p=0.5):
+    factor = random.choice(factors)
+    w = int(width/factor)
+    h = int(height/factor)
+    interp = Image.NEAREST if random.random() >= p else Image.BILINEAR
+    # img2save = Image.fromarray(img)
+    # img2save.save(os.path.join(os.getcwd(), 'before.png'))
+    img = np.expand_dims(np.array(Image.fromarray(np.squeeze(img)).resize((w, h))), axis=0)
+    img = np.array(Image.fromarray(np.squeeze(img)).resize((width, height), resample=interp))
+    # img2save = Image.fromarray(img)
+    # img2save.save(os.path.join(os.getcwd(), 'after.png'))
+    return img
 
 
 class LPRDataLoader(Dataset):
@@ -103,6 +118,8 @@ class LPRDataLoader(Dataset):
     def transform(self, img):
         if self.train:
             img = image_aug(img)
+            if random.random() >= 0.5:
+                img = pixelize(img, width=self.img_size[0], height=self.img_size[1])
         img = img.astype('float32')
         img -= 127.5
         img *= 0.0078125 # * (1/128)
