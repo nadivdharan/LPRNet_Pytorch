@@ -74,7 +74,7 @@ def adjust_learning_rate(optimizer, cur_epoch, base_lr, lr_schedule):
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
     parser.add_argument('--max_epoch', type=int, default=15, help='epoch to train the network')
-    parser.add_argument('--img_size', nargs=2, type=int, default=[300, 75], help='the image size')
+    parser.add_argument('--img_size', nargs=2, type=int, default=[120, 30], help='the image size')
     parser.add_argument('--train_img_dirs', default="/fastdata/users/nivv/plate_recognition/train", help='the train images path')
     parser.add_argument('--test_img_dirs', default="/fastdata/users/nivv/plate_recognition/val", help='the test images path')
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
@@ -206,7 +206,7 @@ def train():
     args = get_parser()
     writer = SummaryWriter(args.save_folder)
 
-    T_length = 19 # args.lpr_max_len
+    T_length = 30 # args.lpr_max_len
     epoch = 0 + args.resume_epoch
     loss_val = 0
     best_acc = 0
@@ -567,6 +567,7 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
     except ZeroDivisionError:
         Acc = 0
     print("[Info] Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Levenshtein Similarity: {}".format(lv_sim))
     t2 = time.time()
     print("[Info] Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
     
