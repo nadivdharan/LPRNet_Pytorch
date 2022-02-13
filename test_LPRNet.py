@@ -38,7 +38,7 @@ def get_parser():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     # parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
     parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
-    parser.add_argument('--drop', action='store_true', help='Use dropoutt')
+    # parser.add_argument('--drop', action='store_true', help='Use dropoutt')
     parser.add_argument('--debug', action='store_true', help='Debug by printing predictions vs. labels')
     parser.add_argument('--crop', default=20, type=int, help='Number of pixels cropped from left part of image')
     # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
@@ -66,7 +66,7 @@ def collate_fn(batch):
 def test():
     args = get_parser()
 
-    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase='test', class_num=len(CHARS), dropout_rate=args.dropout_rate, drop=args.drop)
+    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase='test', class_num=len(CHARS), dropout_rate=args.dropout_rate)
     device = torch.device("cuda:0" if args.cuda else "cpu")
     lprnet.to(device)
     print("Successful to build network!")

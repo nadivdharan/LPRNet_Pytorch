@@ -30,7 +30,7 @@ def main(args):
     device = torch.device("cuda:0" if args.cuda else "cpu")
     lprnet.to(device)
 
-    lprnet.load_state_dict(torch.load(args.weights))
+    lprnet.load_state_dict(torch.load(args.weights, map_location=torch.device(device)))
     print("Pretrained weights loaded")
 
     lprnet.eval()
