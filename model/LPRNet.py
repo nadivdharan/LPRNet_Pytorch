@@ -37,7 +37,7 @@ class downsample(nn.Module):
 
 
 class LPRNet(nn.Module):
-    def __init__(self, lpr_max_len, phase, class_num, dropout_rate, device, drop=False):
+    def __init__(self, lpr_max_len, phase, class_num, dropout_rate, device):
         super(LPRNet, self).__init__()
         self.phase = phase
         self.lpr_max_len = lpr_max_len
@@ -54,19 +54,15 @@ class LPRNet(nn.Module):
                       downsample=downsample(64, 128, kernel_size=1, stride=1)),
 
             # s2
-            res_block(ch_in=128, ch_out=128, stride=2, padding=1,
-                      downsample=downsample(128, 128, kernel_size=1, stride=2)),
+            res_block(ch_in=128, ch_out=128, padding=1),
             res_block(ch_in=128, ch_out=256, padding=1,
                       downsample=downsample(128, 256, kernel_size=1, stride=1)),
             ) # (24 x 96)
         
         self.downsample1 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
-            nn.BatchNorm2d(num_features=256),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
-            nn.BatchNorm2d(num_features=256),
-            nn.ReLU(),
+            # nn.BatchNorm2d(num_features=256),
+            # nn.ReLU(),
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256)
             )
@@ -88,39 +84,26 @@ class LPRNet(nn.Module):
         self.downsample2 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
-            nn.BatchNorm2d(num_features=256),
             )
 
         self.stage3 = nn.Sequential(
             res_block(ch_in=256, ch_out=256, stride=2, padding=1,
                       downsample=downsample(256, 256, kernel_size=1, stride=2)),
-            res_block(ch_in=256, ch_out=256, stride=2, padding=1,
-                      downsample=downsample(256, 256, kernel_size=1, stride=2)),
-            # )
+            res_block(ch_in=256, ch_out=256, padding=1,
+                    #   downsample=downsample(256, 512, kernel_size=1, stride=1)),
+            )
 
             # # s2
             # res_block(ch_in=256, ch_out=256, padding=2),
             # res_block(ch_in=256, ch_out=512, padding=2,
             #           downsample=downsample(256, 512, kernel_size=1, stride=1)),
             ) # (6 x 24)
-        if drop:
-            self.stage4 = nn.Sequential(
-                nn.Dropout(dropout_rate),
-                nn.Conv2d(in_channels=256, out_channels=256, kernel_size=(1, 5), stride=1, padding=(0, 2)),  # (6 x 24)
-                nn.BatchNorm2d(num_features=256),
-                nn.ReLU(),
-                nn.Dropout(dropout_rate),
-                nn.Conv2d(in_channels=256, out_channels=class_num, kernel_size=(5, 1), stride=1, padding=(2, 0)), # (6 x 24)
-                nn.BatchNorm2d(num_features=class_num),
-                nn.ReLU(),
-            )    
-        else:
-            self.stage4 = nn.Sequential(
+        self.stage4 = nn.Sequential(
+            # nn.Dropout(dropout_rate),
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=(1, 5), stride=1, padding=(0, 2)),  # (6 x 24)
             nn.BatchNorm2d(num_features=256),
             nn.ReLU(),
+            # nn.Dropout(dropout_rate),
             nn.Conv2d(in_channels=256, out_channels=class_num, kernel_size=(5, 1), stride=1, padding=(2, 0)), # (6 x 24)
             nn.BatchNorm2d(num_features=class_num),
             nn.ReLU(),
@@ -155,9 +138,9 @@ class LPRNet(nn.Module):
 
         return logits
 
-def build_lprnet(lpr_max_len=8, phase=False, class_num=66, dropout_rate=0.5, device=torch.device("cuda:0"), drop=False):
+def build_lprnet(lpr_max_len=8, phase=False, class_num=66, dropout_rate=0.5, device=torch.device("cuda:0")):
 
-    Net = LPRNet(lpr_max_len, phase, class_num, dropout_rate, device, drop=drop)
+    Net = LPRNet(lpr_max_len, phase, class_num, dropout_rate, device)
 
     if phase == "train":
         return Net.train()
