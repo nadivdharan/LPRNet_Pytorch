@@ -24,7 +24,7 @@ def main(args):
 
     img = torch.randn((1, 3, args.img_size[1], args.img_size[0]), requires_grad=True).cuda()
 
-    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase=args.phase_train, class_num=len(CHARS), dropout_rate=args.dropout_rate)
+    lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase_train=args.phase_train, class_num=len(CHARS), dropout_rate=args.dropout_rate)
     print("Model built")
 
     device = torch.device("cuda:0" if args.cuda else "cpu")

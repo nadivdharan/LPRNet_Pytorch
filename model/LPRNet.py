@@ -155,11 +155,11 @@ class LPRNet(nn.Module):
 
         return logits
 
-def build_lprnet(lpr_max_len=8, phase=False, class_num=66, dropout_rate=0.5, device=torch.device("cuda:0"), drop=False):
+def build_lprnet(lpr_max_len=8, phase_train=False, class_num=66, dropout_rate=0.5, device=torch.device("cuda:0"), drop=False):
 
-    Net = LPRNet(lpr_max_len, phase, class_num, dropout_rate, device, drop=drop)
+    Net = LPRNet(lpr_max_len, phase_train, class_num, dropout_rate, device, drop=drop)
 
-    if phase == "train":
+    if phase_train:
         return Net.train()
     else:
         return Net.eval()
