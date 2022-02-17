@@ -58,7 +58,7 @@ class LPRNet(nn.Module):
                       downsample=downsample(128, 128, kernel_size=1, stride=2)),
             res_block(ch_in=128, ch_out=256, padding=1,
                       downsample=downsample(128, 256, kernel_size=1, stride=1)),
-            ) # (24 x 96)
+            ) # (38 x 150)
         
         self.downsample1 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
@@ -74,16 +74,8 @@ class LPRNet(nn.Module):
         self.stage2 = nn.Sequential(
             res_block(ch_in=256, ch_out=256, stride=2, padding=1,
                       downsample=downsample(256, 256, kernel_size=1, stride=2)),
-            res_block(ch_in=256, ch_out=256, padding=1,
-                    #   downsample=downsample(256, 512, kernel_size=1, stride=1)), # NOTE maybe omit channel increase
-            ),
-
-            # # s2
-            # res_block(ch_in=256, ch_out=256, padding=1),
-            # res_block(ch_in=256, ch_out=256, padding=1,
-            #         #   downsample=downsample(128, 256, kernel_size=1, stride=1)
-            # ),
-            ) # (12 x 48)
+            res_block(ch_in=256, ch_out=256, padding=1)
+            ) # (19 x 75)
 
         self.downsample2 = nn.Sequential(
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
@@ -97,14 +89,8 @@ class LPRNet(nn.Module):
             res_block(ch_in=256, ch_out=256, stride=2, padding=1,
                       downsample=downsample(256, 256, kernel_size=1, stride=2)),
             res_block(ch_in=256, ch_out=256, stride=2, padding=1,
-                      downsample=downsample(256, 256, kernel_size=1, stride=2)),
-            # )
-
-            # # s2
-            # res_block(ch_in=256, ch_out=256, padding=2),
-            # res_block(ch_in=256, ch_out=512, padding=2,
-            #           downsample=downsample(256, 512, kernel_size=1, stride=1)),
-            ) # (6 x 24)
+                      downsample=downsample(256, 256, kernel_size=1, stride=2))
+            ) # (5 x 19)
         if drop:
             self.stage4 = nn.Sequential(
                 nn.Dropout(dropout_rate),
@@ -124,7 +110,7 @@ class LPRNet(nn.Module):
             nn.Conv2d(in_channels=256, out_channels=class_num, kernel_size=(5, 1), stride=1, padding=(2, 0)), # (6 x 24)
             nn.BatchNorm2d(num_features=class_num),
             nn.ReLU(),
-            )
+            ) # (5 x 19)
 
         self.bn = nn.Sequential(
             nn.BatchNorm2d(num_features=256)
@@ -138,7 +124,6 @@ class LPRNet(nn.Module):
         )
 
     def forward(self, x):
-        # print('\n== BACKBONE ==')
         stage1 = self.stage1(x)
         stage2 = self.stage2(stage1)
         stage3 = self.stage3(stage2)
