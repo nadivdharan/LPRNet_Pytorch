@@ -6,7 +6,7 @@ test pretrained model.
 Author: aiboy.wei@outlook.com .
 '''
 
-from data.load_data import CHARS, CHARS_DICT, LPRDataLoader
+from data.load_data import CHARS, LPRDataLoader
 from PIL import Image, ImageDraw, ImageFont
 from model.LPRNet import build_lprnet
 # import torch.backends.cudnn as cudnn
@@ -22,6 +22,8 @@ import time
 import cv2
 import os
 from tqdm import tqdm
+from strsimpy.normalized_levenshtein import NormalizedLevenshtein
+import matplotlib.pyplot as plt
 
 
 MAX_TO_SHOW = 50
@@ -86,7 +88,6 @@ def test():
         cv2.destroyAllWindows()
 
 def Greedy_Decode_Eval(Net, datasets, args):
-    # TestNet = Net.eval()
     Net.eval()
     epoch_size = len(datasets) // args.test_batch_size
     batch_iterator = iter(DataLoader(datasets, args.test_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
@@ -125,8 +126,6 @@ def Greedy_Decode_Eval(Net, datasets, args):
             preb_label = list()
             for j in range(preb.shape[1]):
                 preb_label.append(np.argmax(preb[:, j], axis=0))
-            if args.debug:
-                print("Ground Befor Decode", ''.join([CHARS[int(x)] for x in preb_label]))
             no_repeat_blank_label = list()
             pre_c = preb_label[0]
             if pre_c != len(CHARS) - 1:
@@ -146,7 +145,6 @@ def Greedy_Decode_Eval(Net, datasets, args):
             if args.show and showed < MAX_TO_SHOW:
                 show(imgs[i], label, targets[i], save_dir=args.save_dir)
                 showed += 1
-            from strsimpy.normalized_levenshtein import NormalizedLevenshtein
             lv_score = NormalizedLevenshtein().similarity(label, targets[i].tolist())
             lv += lv_score
             if args.debug:
@@ -178,7 +176,6 @@ def Greedy_Decode_Eval(Net, datasets, args):
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 
 def show(img, label, target, save_dir=None):
-    import matplotlib.pyplot as plt
     if not save_dir:
         raise ValueError("Path to save predictions not provided")
     img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C

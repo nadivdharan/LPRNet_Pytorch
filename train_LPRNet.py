@@ -6,9 +6,8 @@ Pytorch implementation for LPRNet.
 Author: aiboy.wei@outlook.com .
 '''
 
-from data.load_data import CHARS, CHARS_DICT, LPRDataLoader
+from data.load_data import CHARS, LPRDataLoader
 from model.LPRNet import build_lprnet
-# from model.LPRNet_orig import build_lprnet
 # import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 import torch.nn.functional as F
@@ -26,7 +25,7 @@ import yaml
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-import cv2
+from strsimpy.normalized_levenshtein import NormalizedLevenshtein
 
 
 FIGSIZE = (4, 4)
@@ -60,9 +59,6 @@ def adjust_learning_rate(optimizer, cur_epoch, base_lr, lr_schedule):
     for i, e in enumerate(lr_schedule):
         if cur_epoch < e:
             lr = base_lr * (0.1 ** i)
-            # lr = base_lr * (0.5 ** i)
-
-            # print("***** ADJUSTING ****", lr)
             break
     if lr == 0:
         lr = base_lr
@@ -95,10 +91,7 @@ def get_parser():
     parser.add_argument('--optimizer', default='rmsprop', type=str, help='optimization algorithm', choices=['sgd', 'rmsprop', 'adam'])
     parser.add_argument('--weight_decay', default=1e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--lr_schedule', default=[4, 8, 12, 14, 16], help='schedule for learning rate.')
-    # parser.add_argument('--lr_schedule', type=int, nargs='+', default=[1e9], help='schedule for learning rate.')
-    # parser.add_argument('--lr_schedule', type=int, nargs='+', default=[10], help='schedule for learning rate.')
     parser.add_argument('--save_folder', default='./runs/exp_large_dataset_aug_large_wd/', help='Location to save checkpoint models')
-    # parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
     parser.add_argument('--pretrained_model', default='', help='pretrained base model')
 
     args = parser.parse_args()
@@ -147,7 +140,6 @@ def get_test_loss(net, dataset, batch_size, num_workers, T_length):
         input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
         logits = net(images)
         log_probs = logits.permute(2, 0, 1) # for ctc loss: T x N x C
-        # print(labels.shape)
         log_probs = log_probs.log_softmax(2)
         loss = ctc_loss(log_probs, labels, input_lengths=input_lengths, target_lengths=target_lengths)
         loss_val += loss.item()
@@ -183,7 +175,6 @@ def _get_batch_metrics(probs, targets):
     lv = 0
     for i, label in enumerate(prob_labels):
         # Precision: mean true character recognition rate per sequence
-        from strsimpy.normalized_levenshtein import NormalizedLevenshtein
         lv += NormalizedLevenshtein().similarity(label, targets[i].tolist())
         min_len = min(len(label), len(targets[i]))
         max_len = max(len(label), len(targets[i]))
@@ -210,8 +201,7 @@ def train():
     loss_val = 0
     best_acc = 0
     best_acc_train = 0
-    train_loss = 0
-    test_loss = 0
+    # train_loss = 0
     acc_train = 0
     prec_test = 0
     prec_train = 0
@@ -244,7 +234,6 @@ def train():
                 elif key.split('.')[-1] == 'bias':
                     m.state_dict()[key][...] = 0.01
 
-        # lprnet.backbone.apply(weights_init)
         lprnet.stage1.apply(weights_init)
         lprnet.stage2.apply(weights_init)
         lprnet.stage3.apply(weights_init)
@@ -297,14 +286,6 @@ def train():
     for iteration in range(start_iter, max_iter): # iteration = batch number
         epoch_iter = iteration % epoch_size
         if epoch_iter == 0:
-            # if epoch > 0:
-            #     train_loss = loss_val / epoch_size  # mean loss per batch
-            #     with torch.no_grad():
-            #         test_loss = get_test_loss(lprnet, train_dataset,
-            #                                   args.train_batch_size, args.num_workers,
-            #                                   T_length)
-                
-
             # create batch iterator
             batch_iterator = iter(DataLoader(train_dataset, args.train_batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
             loss_val = 0
@@ -320,8 +301,6 @@ def train():
             targets.append(label)
             start += length
         targets = np.array([el.numpy() for el in targets])
-        # labels = np.array([el.numpy() for el in labels]).T
-        # print(labels)
         # get ctc parameters
         input_lengths, target_lengths = sparse_tuple_for_ctc(T_length, lengths)
         # update lr
@@ -337,10 +316,8 @@ def train():
         # forward
         logits = lprnet(images)
         log_probs = logits.permute(2, 0, 1) # for ctc loss: T x N x C
-        # print(labels.shape)
         log_probs = log_probs.log_softmax(2).requires_grad_()
         # log_probs = log_probs.detach().requires_grad_()
-        # print(log_probs.shape)
         # backprop
         optimizer.zero_grad()
         loss = ctc_loss(log_probs, labels, input_lengths=input_lengths, target_lengths=target_lengths)
@@ -357,16 +334,12 @@ def train():
         if (iteration + 1) % args.test_interval == 0:
             with torch.no_grad():
                 acc_train, prec_train, lv_norm_sim_train = _get_batch_metrics(logits, targets)
-                # print('*** Evaluating on train set... ***')
-                # acc_train, prec_train, train_loss, lv_norm_sim_train = Greedy_Decode_Eval(lprnet, train_dataset,
-                #                                            args.train_batch_size, args,
-                #                                            T_length)#, debug='train')
                 print('*** Evaluating on test set... ***')
                 # NOTE switch to eval and back to train is done by the deocder
                 acc, prec_test, test_loss, lv_norm_sim_test = Greedy_Decode_Eval(lprnet, test_dataset,
                                                     args.test_batch_size, args,
                                                     T_length, plot_pred=args.plot_predictions,
-                                                    figsize=FIGSIZE)#, debug='test')
+                                                    figsize=FIGSIZE)
             # lprnet.train() # should be switch to train mode
             best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
             log_training(args.save_folder, iteration, epoch,
@@ -442,23 +415,17 @@ def show_pred(ax, img, label, target):
     ax.axis('off')
 
 
-def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, plot_pred=True, figsize=(10,10)):#, mode='test'):
-    # TestNet = Net.eval()
-    # assert mode in ['test', 'train'], F"Unrecognized mode {mode}. Please choose from ['test', 'train']"
+def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, plot_pred=True, figsize=(10,10)):
     Net.eval()
     
     epoch_size = len(datasets) // batch_size
     batch_iterator = iter(DataLoader(datasets, batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
-    # batch_size = args.test_batch_size if 'test' in mode else args.train_batch_size
-    # epoch_size = len(datasets) // batch_size
-    # batch_iterator = iter(DataLoader(datasets, batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn))
 
     Tp = 0
     Tn_1 = 0
     Tn_2 = 0
     loss_val = 0
     precision = 0
-    # jw_sim = 0
     lv_sim = 0
     ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
     t1 = time.time()
@@ -490,8 +457,6 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
         # if loss.item() == np.inf:
             # continue
         loss_val += loss.item() / epoch_size
-        if debug:
-            print(F"*** {debug} in eval : {loss.item()}, {loss_val}")
 
         # greedy decode
         prebs = prebs.cpu().detach().numpy()
@@ -516,7 +481,6 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
         
         # Metrics calcs
         Acc_2 = 0
-        # jw = 0
         lv = 0
         if plot_pred:
             # fig, axs = plt.subplots(4, 4, gridspec_kw={'hspace':0, 'wspace':0}, figsize=figsize)
@@ -532,13 +496,9 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
                     # fig.savefig(os.path.join(args.save_folder, 'test_pred.jpg'))
                     fig.savefig(os.path.join(args.save_folder, F'test_pred_{i}.jpg'))
                     plt.close(fig)
-            
-            from strsimpy.jaro_winkler import JaroWinkler
-            from strsimpy.normalized_levenshtein import NormalizedLevenshtein
-            # jw += JaroWinkler().similarity(label, targets[i].tolist())
+
             lv += NormalizedLevenshtein().similarity(label, targets[i].tolist())
-            
-            
+
             # Precision: mean true character recognition rate per sequence
             min_len = min(len(label), len(targets[i]))
             max_len = max(len(label), len(targets[i]))
@@ -553,10 +513,8 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
             else:
                 Tn_2 += 1
         precision += Acc_2
-        # jw_sim += jw / len(preb_labels)
         lv_sim += lv / len(preb_labels)
     precision /= epoch_size
-    # jw_sim /= epoch_size
     lv_sim /= epoch_size
     try:
         Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
@@ -568,7 +526,6 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
     
     Net.train()
 
-    # return Acc, precision, loss_val, jw_sim
     return Acc, precision, loss_val, lv_sim
 
 if __name__ == "__main__":
