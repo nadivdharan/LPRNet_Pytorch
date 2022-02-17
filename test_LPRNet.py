@@ -36,8 +36,7 @@ def get_parser():
     parser.add_argument('--test_batch_size', type=int, default=1, help='testing batch size.')
     # parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
-    # parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
-    parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
+    parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')
     parser.add_argument('--drop', action='store_true', help='Use dropoutt')
     parser.add_argument('--debug', action='store_true', help='Debug by printing predictions vs. labels')
     parser.add_argument('--crop', default=20, type=int, help='Number of pixels cropped from left part of image')
@@ -67,7 +66,7 @@ def test():
     args = get_parser()
 
     lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase_train=False, class_num=len(CHARS), dropout_rate=args.dropout_rate, drop=args.drop)
-    device = torch.device("cuda:0" if args.cuda else "cpu")
+    device = torch.device("cpu" if args.cpu else "cuda:0")
     lprnet.to(device)
     print("Successful to build network!")
 
@@ -111,7 +110,7 @@ def Greedy_Decode_Eval(Net, datasets, args):
         targets = np.array([el.numpy() for el in targets])
         imgs = images.numpy().copy()
 
-        if args.cuda:
+        if not args.cpu:
             images = Variable(images.cuda())
         else:
             images = Variable(images)

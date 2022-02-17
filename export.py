@@ -11,7 +11,7 @@ def get_parser():
     parser.add_argument('--lpr_max_len', default=8, help='license plate number max length.')
     parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
     parser.add_argument('--dropout_rate', default=0, help='dropout rate.')
-    parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
+    parser.add_argument('--cpu', action='store_true', help='Use CPU to load model (default is use cuda)')
     parser.add_argument('--onnx', type=str, default='lprnet.onnx', help='ONNX name')
     parser.add_argument('--weights', default=None, help='pretrained weights')
 
@@ -22,15 +22,18 @@ def get_parser():
 
 def main(args):
 
-    img = torch.randn((1, 3, args.img_size[1], args.img_size[0]), requires_grad=True).cuda()
+    if not args.cpu:
+        img = torch.randn((1, 3, args.img_size[1], args.img_size[0]), requires_grad=True).cuda()
+    else:
+        img = torch.randn((1, 3, args.img_size[1], args.img_size[0]), requires_grad=True)
 
     lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase_train=args.phase_train, class_num=len(CHARS), dropout_rate=args.dropout_rate)
     print("Model built")
 
-    device = torch.device("cuda:0" if args.cuda else "cpu")
+    device = torch.device("cpu" if args.cpu else "cuda:0")
     lprnet.to(device)
 
-    lprnet.load_state_dict(torch.load(args.weights))
+    lprnet.load_state_dict(torch.load(args.weights, map_location=torch.device(device)))
     print("Pretrained weights loaded")
 
     lprnet.eval()

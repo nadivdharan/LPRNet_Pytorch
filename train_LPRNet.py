@@ -84,9 +84,8 @@ def get_parser():
     parser.add_argument('--test_batch_size', type=int, default=32, help='testing batch size.')
     # parser.add_argument('--phase_train', default=True, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
-    parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
     parser.add_argument('--aug', default=True, type=bool, help='Use data augmentation')
-    #parser.add_argument('--cuda', action='store_true', help='Use cuda to train model')
+    parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')
     parser.add_argument('--plot_predictions', action='store_true', help='Plot plate number predictions for some test images')
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
     parser.add_argument('--save_interval', default=2000, type=int, help='epoch interval for save model state dict')
@@ -222,14 +221,14 @@ def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-    device = torch.device("cuda:0" if args.cuda else "cpu")
+    device = torch.device("cpu" if args.cpu else "cuda:0")
     lprnet = build_lprnet(lpr_max_len=args.lpr_max_len, phase_train=True, class_num=len(CHARS), dropout_rate=args.dropout_rate, device=device)
     lprnet.to(device)
     print("Successful to build network!")
 
     # load pretrained model
     if args.pretrained_model:
-        lprnet.load_state_dict(torch.load(args.pretrained_model))
+        lprnet.load_state_dict(torch.load(args.pretrained_model, map_location=torch.device(device)))
         print("load pretrained model successful!")
     else:
         def xavier(param):
@@ -289,10 +288,7 @@ def train():
     else:
         start_iter = 0
 
-    # save final parameters
-    # torch.save(lprnet.state_dict(), args.save_folder + 'Final_LPRNet_model.pth')
-    print(summary(lprnet, (3, args.img_size[1], args.img_size[0])))
-    # import ipdb; ipdb.set_trace()
+    print(summary(lprnet, (3, args.img_size[1], args.img_size[0]), device='cpu' if args.cpu else 'cuda:0'))
 
     with open(os.path.join(args.save_folder, 'opt.yaml'), 'w') as f:
         yaml.dump(args, f, sort_keys=False)
@@ -331,7 +327,7 @@ def train():
         # update lr
         lr = adjust_learning_rate(optimizer, epoch, args.learning_rate, args.lr_schedule)
 
-        if args.cuda:
+        if not args.cpu:
             images = Variable(images, requires_grad=False).cuda()
             labels = Variable(labels, requires_grad=False).cuda()
         else:
@@ -478,7 +474,7 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, debug=None, pl
             start += length
         targets = np.array([el.numpy() for el in targets])
 
-        if args.cuda:
+        if not args.cpu:
             images = Variable(images.cuda())
         else:
             images = Variable(images)
