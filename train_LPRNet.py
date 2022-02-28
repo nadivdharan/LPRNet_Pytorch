@@ -34,8 +34,8 @@ log_dict = {'iteration': list(),
             'test_loss': list(),          # Validation Loss
             'train accuracy': list(),     # Training batch plate accuracy 
             'test accuracy': list(),      # Validation plate accuracy
-            'prec_train': list(),         # Mean training batch character recocgnition rate
-            'prec_test': list(),          # Mean validation character recocgnition rate
+            # 'prec_train': list(),         # Mean training batch character recocgnition rate
+            # 'prec_test': list(),          # Mean validation character recocgnition rate
             'lv_norm_sim_train': list(),  # Training bacth normalized Levenshtein similarity
             'lv_norm_sim_test': list()}   # Validation normalized Levenshtein similarity
 
@@ -123,15 +123,16 @@ def log_training(path, *args):
     df.to_csv(os.path.join(path, 'training.log'))
 
 
-def log_tb(writer, iteration, train_loss, test_loss, acc_train, acc, prec_train, prec_test,
+def log_tb(writer, iteration, train_loss, test_loss, acc_train, acc,
+        #    prec_train, prec_test,
            lv_norm_sim_train, lv_norm_sim_test, model, images, pred_fig):
     writer.add_graph(model, images)
     writer.add_scalar('Loss/train', train_loss, global_step=iteration)
     writer.add_scalar('Loss/test', test_loss, global_step=iteration)
     writer.add_scalar('Accuracy/train', acc_train, global_step=iteration)
     writer.add_scalar('Accuracy/test', acc, global_step=iteration)
-    writer.add_scalar('CRR/train', prec_train, global_step=iteration)
-    writer.add_scalar('CRR/test', prec_test, global_step=iteration)
+    # writer.add_scalar('CRR/train', prec_train, global_step=iteration)
+    # writer.add_scalar('CRR/test', prec_test, global_step=iteration)
     writer.add_scalar('Normalized Levenshtein Similarity/train', lv_norm_sim_train, global_step=iteration)
     writer.add_scalar('Normalized Levenshtein Similarity/test', lv_norm_sim_test, global_step=iteration)
     writer.add_figure(F'Test Predictions', pred_fig, global_step=iteration)
@@ -160,6 +161,7 @@ def get_test_loss(net, dataset, batch_size, num_workers, T_length):
 
 def _get_batch_metrics(probs, targets):
     # greedy decode
+    NormLev = NormalizedLevenshtein()
     probs = probs.cpu().detach().numpy()
     Tp = 0
     Tn_1 = 0
@@ -182,14 +184,14 @@ def _get_batch_metrics(probs, targets):
             no_repeat_blank_label.append(c)
             pre_c = c
         prob_labels.append(no_repeat_blank_label)
-    ch_acc = 0
+    # ch_acc = 0
     lv = 0
     for i, label in enumerate(prob_labels):
         # Precision: mean true character recognition rate per sequence
-        lv += NormalizedLevenshtein().similarity(label, targets[i].tolist())
-        min_len = min(len(label), len(targets[i]))
-        max_len = max(len(label), len(targets[i]))
-        ch_acc += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / max_len
+        lv += NormLev.similarity(label, targets[i].tolist())
+        # min_len = min(len(label), len(targets[i]))
+        # max_len = max(len(label), len(targets[i]))
+        # ch_acc += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / max_len
 
         # Accuracy
         if len(label) != len(targets[i]):
@@ -200,7 +202,8 @@ def _get_batch_metrics(probs, targets):
         else:
             Tn_2 += 1
     acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
-    return acc, ch_acc / len(prob_labels), lv / len(prob_labels)
+    # return acc, ch_acc / len(prob_labels), lv / len(prob_labels)
+    return acc, lv / len(prob_labels)
 
 
 def train():
@@ -215,8 +218,8 @@ def train():
     # train_loss = 0
     test_loss = 0
     acc_train = 0
-    prec_test = 0
-    prec_train = 0
+    # prec_test = 0
+    # prec_train = 0
     lv_norm_sim_train = 0
     lv_norm_sim_test = 0
 
@@ -345,10 +348,10 @@ def train():
 
         if (iteration + 1) % args.test_interval == 0:
             with torch.no_grad():
-                acc_train, prec_train, lv_norm_sim_train = _get_batch_metrics(logits, targets)
+                acc_train, lv_norm_sim_train = _get_batch_metrics(logits, targets)
                 print('*** Evaluating on test set... ***')
                 # NOTE switch to eval and back to train is done by the deocder
-                acc, prec_test, test_loss, lv_norm_sim_test, pred_fig =\
+                acc, test_loss, lv_norm_sim_test, pred_fig =\
                     Greedy_Decode_Eval(lprnet, test_dataset,
                                        args.test_batch_size, args,
                                        T_length)
@@ -358,10 +361,11 @@ def train():
                          loss_val/(epoch_iter + 1),
                          test_loss,
                          acc_train, acc,
-                         prec_train, prec_test,
+                        #  prec_train, prec_test,
                          lv_norm_sim_train, lv_norm_sim_test)
             log_tb(writer, iteration, loss_val/(epoch_iter + 1), test_loss,
-                   acc_train, acc, prec_train, prec_test,
+                   acc_train, acc,
+                #    prec_train, prec_test,
                    lv_norm_sim_train, lv_norm_sim_test, lprnet, images, pred_fig)
 
             if acc > best_acc:
@@ -378,9 +382,9 @@ def train():
                   + '|| Train Loss: %.4f|| ' % (loss_val / (epoch_iter + 1))
                   + '|| Test Loss: %.4f|| ' % test_loss
                   + '|| Batch Train Loss: %.4f|| ' %loss.item() #% train_loss
-                  + '|| Mean Acc.: %.2f || ' % prec_test
-                  + '|| Mean Train Acc.: %.2f || ' % prec_train
-                  + '|| Best Acc.: %.2f || ' % best_acc
+                #   + '|| Mean Acc.: %.2f || ' % prec_test
+                #   + '|| Mean Train Acc.: %.2f || ' % prec_train
+                  + '|| Best Test Acc.: %.2f || ' % best_acc
                   + '|| Best Train Acc.: %.2f || ' % best_acc_train
                   + '|| Batch time: %.4f sec. ||' % (end_time - start_time) + 'LR: %.8f' % (lr))
     # final test
@@ -430,9 +434,10 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length):
     Tn_1 = 0
     Tn_2 = 0
     loss_val = 0
-    precision = 0
+    # precision = 0
     lv_sim = 0
     ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
+    NormLev = NormalizedLevenshtein()
     t1 = time.time()
     for _ in tqdm(range(epoch_size)):
         # load train data
@@ -486,15 +491,15 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length):
         
         batch_preds = show_batch_pred(imgs, preb_labels, targets)
         # Metrics calcs
-        Acc_2 = 0
+        # Acc_2 = 0
         lv = 0
         for i, label in enumerate(preb_labels):
-            lv += NormalizedLevenshtein().similarity(label, targets[i].tolist())
+            lv += NormLev.similarity(label, targets[i].tolist())
 
             # Precision: mean true character recognition rate per sequence
-            min_len = min(len(label), len(targets[i]))
-            max_len = max(len(label), len(targets[i]))
-            Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
+            # min_len = min(len(label), len(targets[i]))
+            # max_len = max(len(label), len(targets[i]))
+            # Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
 
             # Accuracy: fraction of correctly predicted plates 
             if len(label) != len(targets[i]):
@@ -504,21 +509,21 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length):
                 Tp += 1
             else:
                 Tn_2 += 1
-        precision += Acc_2
+        # precision += Acc_2
         lv_sim += lv / len(preb_labels)
-    precision /= epoch_size
+    # precision /= epoch_size
     lv_sim /= epoch_size
     try:
         Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
     except ZeroDivisionError:
         Acc = 0
-    print("[Info] Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Accuracy: {} [{}:{}:{}:{}]".format(Acc, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     t2 = time.time()
     print("[Info] Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
     
     Net.train()
 
-    return Acc, precision, loss_val, lv_sim, batch_preds
+    return Acc, loss_val, lv_sim, batch_preds
 
 if __name__ == "__main__":
     train()
