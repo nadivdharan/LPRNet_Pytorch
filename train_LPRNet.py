@@ -30,8 +30,7 @@ from strsimpy.normalized_levenshtein import NormalizedLevenshtein
 
 log_dict = {'iteration': list(),
             'epoch': list(),
-            'training loss': list(),      # Average batch loss during epoch
-            'train_loss': list(),         # Mean batch atch training loss
+            'train_loss': list(),         # Average batch loss during epoch
             'test_loss': list(),          # Validation Loss
             'train accuracy': list(),     # Training batch plate accuracy 
             'test accuracy': list(),      # Validation plate accuracy
@@ -124,12 +123,10 @@ def log_training(path, *args):
     df.to_csv(os.path.join(path, 'training.log'))
 
 
-def log_tb(writer, epoch_iter, iteration, loss, loss_val, test_loss, acc_train, acc, prec_train, prec_test,
-           lv_norm_sim_train, lv_norm_sim_test, args, model, images, pred_fig):
+def log_tb(writer, iteration, train_loss, test_loss, acc_train, acc, prec_train, prec_test,
+           lv_norm_sim_train, lv_norm_sim_test, model, images, pred_fig):
     writer.add_graph(model, images)
-    writer.add_scalar('Loss/train (current iteration)', loss_val/(epoch_iter + 1), global_step=iteration)
-    # writer.add_scalar('Loss/train', train_loss, global_step=iteration)
-    writer.add_scalar('Loss/train', loss.item(), global_step=iteration)
+    writer.add_scalar('Loss/train', train_loss, global_step=iteration)
     writer.add_scalar('Loss/test', test_loss, global_step=iteration)
     writer.add_scalar('Accuracy/train', acc_train, global_step=iteration)
     writer.add_scalar('Accuracy/test', acc, global_step=iteration)
@@ -359,15 +356,13 @@ def train():
             best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
             log_training(args.save_folder, iteration, epoch,
                          loss_val/(epoch_iter + 1),
-                        #  train_loss,
-                         loss.item(),
                          test_loss,
                          acc_train, acc,
                          prec_train, prec_test,
                          lv_norm_sim_train, lv_norm_sim_test)
-            log_tb(writer, epoch_iter, iteration, loss, loss_val, test_loss,
+            log_tb(writer, iteration, loss_val/(epoch_iter + 1), test_loss,
                    acc_train, acc, prec_train, prec_test,
-                   lv_norm_sim_train, lv_norm_sim_test, args, lprnet, images, pred_fig)
+                   lv_norm_sim_train, lv_norm_sim_test, lprnet, images, pred_fig)
 
             if acc > best_acc:
                 print(F'New Best! {acc}')
@@ -380,9 +375,9 @@ def train():
                   + '|| Totel iter ' + repr(iteration) + '|| Loss: %.4f|| ' % (loss.item())
                   + '|| Train N-LV Sim: %.4f|| ' % lv_norm_sim_train
                   + '|| Test N-LV Sim: %.4f|| ' % lv_norm_sim_test
-                  + '|| Training Loss: %.4f|| ' % (loss_val / (epoch_iter + 1))
-                  + '|| Train Loss: %.4f|| ' %loss.item() #% train_loss
+                  + '|| Train Loss: %.4f|| ' % (loss_val / (epoch_iter + 1))
                   + '|| Test Loss: %.4f|| ' % test_loss
+                  + '|| Batch Train Loss: %.4f|| ' %loss.item() #% train_loss
                   + '|| Mean Acc.: %.2f || ' % prec_test
                   + '|| Mean Train Acc.: %.2f || ' % prec_train
                   + '|| Best Acc.: %.2f || ' % best_acc
