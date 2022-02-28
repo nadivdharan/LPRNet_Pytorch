@@ -28,7 +28,6 @@ import matplotlib.pyplot as plt
 from strsimpy.normalized_levenshtein import NormalizedLevenshtein
 
 
-FIGSIZE = (4, 4)
 log_dict = {'iteration': list(),
             'epoch': list(),
             'training loss': list(),      # Average batch loss during epoch
@@ -82,7 +81,6 @@ def get_parser():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--aug', default=True, type=bool, help='Use data augmentation')
     parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')
-    parser.add_argument('--plot_predictions', action='store_true', help='Plot plate number predictions for some test images')
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
     parser.add_argument('--save_interval', default=2000, type=int, help='epoch interval for save model state dict')
     parser.add_argument('--test_interval', default=2000, type=int, help='epoch interval for evaluate')
@@ -124,6 +122,22 @@ def log_training(path, *args):
     update_d(log_dict, *args)
     df = pd.DataFrame(log_dict).set_index(list(log_dict.keys())[0])
     df.to_csv(os.path.join(path, 'training.log'))
+
+
+def log_tb(writer, epoch_iter, iteration, loss, loss_val, test_loss, acc_train, acc, prec_train, prec_test,
+           lv_norm_sim_train, lv_norm_sim_test, args, model, images, pred_fig):
+    writer.add_graph(model, images)
+    writer.add_scalar('Loss/train (current iteration)', loss_val/(epoch_iter + 1), global_step=iteration)
+    # writer.add_scalar('Loss/train', train_loss, global_step=iteration)
+    writer.add_scalar('Loss/train', loss.item(), global_step=iteration)
+    writer.add_scalar('Loss/test', test_loss, global_step=iteration)
+    writer.add_scalar('Accuracy/train', acc_train, global_step=iteration)
+    writer.add_scalar('Accuracy/test', acc, global_step=iteration)
+    writer.add_scalar('CRR/train', prec_train, global_step=iteration)
+    writer.add_scalar('CRR/test', prec_test, global_step=iteration)
+    writer.add_scalar('Normalized Levenshtein Similarity/train', lv_norm_sim_train, global_step=iteration)
+    writer.add_scalar('Normalized Levenshtein Similarity/test', lv_norm_sim_test, global_step=iteration)
+    writer.add_figure(F'Test Predictions', pred_fig, global_step=iteration)
 
 
 def get_test_loss(net, dataset, batch_size, num_workers, T_length):
@@ -202,6 +216,7 @@ def train():
     best_acc = 0
     best_acc_train = 0
     # train_loss = 0
+    test_loss = 0
     acc_train = 0
     prec_test = 0
     prec_train = 0
@@ -277,7 +292,7 @@ def train():
     else:
         start_iter = 0
 
-    print(summary(lprnet, (3, args.img_size[1], args.img_size[0]), device='cpu' if args.cpu else 'cuda:0'))
+    print(summary(lprnet, (3, args.img_size[1], args.img_size[0]), device='cpu' if args.cpu else 'cuda'))
 
     with open(os.path.join(args.save_folder, 'opt.yaml'), 'w') as f:
         yaml.dump(args, f, sort_keys=False)
@@ -336,10 +351,10 @@ def train():
                 acc_train, prec_train, lv_norm_sim_train = _get_batch_metrics(logits, targets)
                 print('*** Evaluating on test set... ***')
                 # NOTE switch to eval and back to train is done by the deocder
-                acc, prec_test, test_loss, lv_norm_sim_test = Greedy_Decode_Eval(lprnet, test_dataset,
-                                                    args.test_batch_size, args,
-                                                    T_length, plot_pred=args.plot_predictions,
-                                                    figsize=FIGSIZE)
+                acc, prec_test, test_loss, lv_norm_sim_test, pred_fig =\
+                    Greedy_Decode_Eval(lprnet, test_dataset,
+                                       args.test_batch_size, args,
+                                       T_length)
             # lprnet.train() # should be switch to train mode
             best_acc_train = acc_train if acc_train > best_acc_train else best_acc_train
             log_training(args.save_folder, iteration, epoch,
@@ -350,24 +365,9 @@ def train():
                          acc_train, acc,
                          prec_train, prec_test,
                          lv_norm_sim_train, lv_norm_sim_test)
-
-            writer.add_scalar('Loss/train (current iteration)', loss_val/(epoch_iter + 1), global_step=iteration)
-            # writer.add_scalar('Loss/train', train_loss, global_step=iteration)
-            writer.add_scalar('Loss/train', loss.item(), global_step=iteration)
-            writer.add_scalar('Loss/test', test_loss, global_step=iteration)
-            writer.add_scalar('Accuracy/train', acc_train, global_step=iteration)
-            writer.add_scalar('Accuracy/test', acc, global_step=iteration)
-            writer.add_scalar('CSI/train', prec_train, global_step=iteration)
-            writer.add_scalar('CSI/test', prec_test, global_step=iteration)
-            writer.add_scalar('Normalized Levenshtein Similarity/train', lv_norm_sim_train, global_step=iteration)
-            writer.add_scalar('Normalized Levenshtein Similarity/test', lv_norm_sim_test, global_step=iteration)
-            if args.plot_predictions:
-                for ii in range(16):
-                    # test_img = plt.imread(os.path.join(args.save_folder, 'test_pred.jpg'))
-                    test_img = plt.imread(os.path.join(args.save_folder, F'test_pred_{ii}.jpg'))
-                    # test_img = torch.from_numpy(test_img).permute(2,0,1)# / 255
-                    # test_img = test_img[[2,1,0], ...]
-                    writer.add_image(F'Test Predictions/test_pred_{ii}', test_img, global_step=iteration, dataformats='HWC')
+            log_tb(writer, epoch_iter, iteration, loss, loss_val, test_loss,
+                   acc_train, acc, prec_train, prec_test,
+                   lv_norm_sim_train, lv_norm_sim_test, args, lprnet, images, pred_fig)
 
             if acc > best_acc:
                 print(F'New Best! {acc}')
@@ -397,25 +397,35 @@ def train():
     torch.save(lprnet.state_dict(), os.path.join(args.save_folder, 'Final_LPRNet_model.pth'))
 
 
-def show_pred(ax, img, label, target):
-    img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
-    img *= 128.
-    img += 127.5
-    img = img.astype(np.uint8)
-    img = img[..., [2, 1, 0]]  # BGR --> RGB
-    lb = ""
-    for i in label:
-        lb += CHARS[i]
-    tg = ""
-    for j in target.tolist():
-        tg += CHARS[int(j)]
+def show_batch_pred(images, preds, targets, subplots=16):
+    def get_orig_image(img):
+        img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
+        img *= 128.
+        img += 127.5
+        img = img.astype(np.uint8)
+        img = img[..., [2, 1, 0]]  # BGR --> RGB
+        return img
+    fig = plt.figure()
+    for idx in range(subplots):
+        try:
+            img = get_orig_image(images[idx])
+        except IndexError:
+            break
+        ax = fig.add_subplot(4, 4, idx+1, xticks=list(), yticks=list())
+        ax.imshow(img)
+        pred = ""
+        for i in preds[idx]:
+            pred += CHARS[i]
+        target = ""
+        for j in targets[idx].tolist():
+            target += CHARS[int(j)]
+        color = 'green' if (np.asarray(pred) == np.asarray(target)).all() else 'red'
+        ax.set_title(F"{pred}", size=12, color=color)
+        ax.axis('off')
+    return fig
 
-    ax.imshow(img)
-    ax.set_title(F'{lb}', size=12)
-    ax.axis('off')
 
-
-def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, plot_pred=True, figsize=(10,10)):
+def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length):
     Net.eval()
     
     epoch_size = len(datasets) // batch_size
@@ -479,24 +489,11 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, plot_pred=True
                 pre_c = c
             preb_labels.append(no_repeat_blank_label)
         
+        batch_preds = show_batch_pred(imgs, preb_labels, targets)
         # Metrics calcs
         Acc_2 = 0
         lv = 0
-        if plot_pred:
-            # fig, axs = plt.subplots(4, 4, gridspec_kw={'hspace':0, 'wspace':0}, figsize=figsize)
-            fig, axs = plt.subplots(figsize=figsize)
-            axs = np.ravel(axs)
         for i, label in enumerate(preb_labels):
-            if plot_pred:
-                if i < 16:
-                    # show_pred(axs[i], imgs[i], label, targets[i])
-                    show_pred(axs[0], imgs[i], label, targets[i])
-                # else:
-                    fig.tight_layout()
-                    # fig.savefig(os.path.join(args.save_folder, 'test_pred.jpg'))
-                    fig.savefig(os.path.join(args.save_folder, F'test_pred_{i}.jpg'))
-                    plt.close(fig)
-
             lv += NormalizedLevenshtein().similarity(label, targets[i].tolist())
 
             # Precision: mean true character recognition rate per sequence
@@ -526,7 +523,7 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length, plot_pred=True
     
     Net.train()
 
-    return Acc, precision, loss_val, lv_sim
+    return Acc, precision, loss_val, lv_sim, batch_preds
 
 if __name__ == "__main__":
     train()
