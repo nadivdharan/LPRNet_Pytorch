@@ -74,7 +74,6 @@ def get_parser():
     parser.add_argument('--lpr_max_len', default=10, type=int, help='license plate number max length.')
     parser.add_argument('--train_batch_size', type=int, default=64, help='training batch size.')
     parser.add_argument('--test_batch_size', type=int, default=32, help='testing batch size.')
-    # parser.add_argument('--phase_train', default=True, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--aug', default=True, type=bool, help='Use data augmentation')
     parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')

@@ -36,7 +36,6 @@ def get_parser():
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
     parser.add_argument('--lpr_max_len', default=10, type=int, help='license plate number max length.')
     parser.add_argument('--test_batch_size', type=int, default=1, help='testing batch size.')
-    # parser.add_argument('--phase_train', default=False, type=bool, help='train or test phase flag.')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')
     parser.add_argument('--drop', action='store_true', help='Use dropoutt')
