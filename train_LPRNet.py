@@ -34,7 +34,7 @@ log_dict = {'iteration': list(),
             'test_loss': list(),          # Validation Loss
             'train accuracy': list(),     # Training batch plate accuracy 
             'test accuracy': list(),      # Validation plate accuracy
-            'lv_norm_sim_train': list(),  # Training bacth normalized Levenshtein similarity
+            'lv_norm_sim_train': list(),  # Training batch normalized Levenshtein similarity
             'lv_norm_sim_test': list()}   # Validation normalized Levenshtein similarity
 
 def sparse_tuple_for_ctc(T_length, lengths):
