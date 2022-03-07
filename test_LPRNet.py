@@ -26,7 +26,7 @@ from strsimpy.normalized_levenshtein import NormalizedLevenshtein
 import matplotlib.pyplot as plt
 
 
-MAX_TO_SHOW = 50
+MAX_TO_SHOW = 32
 
 
 def get_parser():
@@ -40,10 +40,7 @@ def get_parser():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cpu', action='store_true', help='Use CPU to train model (default is use cuda)')
     parser.add_argument('--drop', action='store_true', help='Use dropoutt')
-    parser.add_argument('--debug', action='store_true', help='Debug by printing predictions vs. labels')
-    parser.add_argument('--crop', default=20, type=int, help='Number of pixels cropped from left part of image')
-    # parser.add_argument('--show', default=False, type=bool, help='show test image and its predict result or not.')
-    parser.add_argument('--show', action='store_true', help='show test image and its predict result or not.')
+    parser.add_argument('--visualize', action='store_true', help='save images with predcitions.')
     parser.add_argument('--pretrained_model', default='./weights/Final_LPRNet_model.pth', help='pretrained base model')
     parser.add_argument('--save_dir', default='./preds', help='Location to save checkpoint models')
 
@@ -81,7 +78,7 @@ def test():
         return False
 
     test_img_dirs = os.path.expanduser(args.test_img_dirs)
-    test_dataset = LPRDataLoader(test_img_dirs.split(','), args.img_size, args.lpr_max_len, train=False, crop=args.crop)
+    test_dataset = LPRDataLoader(test_img_dirs.split(','), args.img_size, args.lpr_max_len, train=False)
     try:
         Greedy_Decode_Eval(lprnet, test_dataset, args)
     finally:
@@ -96,8 +93,8 @@ def Greedy_Decode_Eval(Net, datasets, args):
     Tn_1 = 0
     Tn_2 = 0
     showed = 0
-    precision = 0
-    lv_sim = 0 
+    lv_sim = 0
+    NormLev = NormalizedLevenshtein()
     t1 = time.time()
     for _ in tqdm(range(epoch_size)):
         # load train data
@@ -138,26 +135,17 @@ def Greedy_Decode_Eval(Net, datasets, args):
                 no_repeat_blank_label.append(c)
                 pre_c = c
             preb_labels.append(no_repeat_blank_label)
-        Acc_2 = 0
         lv = 0
         for i, label in enumerate(preb_labels):
-            # show image and its predict label
-            if args.show and showed < MAX_TO_SHOW:
-                show(imgs[i], label, targets[i], save_dir=args.save_dir)
+            # save image with its predicted label
+            if args.visualize and showed < MAX_TO_SHOW:
+                visualize_predictions(imgs[i], label, targets[i], save_dir=args.save_dir)
                 showed += 1
-            lv_score = NormalizedLevenshtein().similarity(label, targets[i].tolist())
+            # Normalized Levenshtein Similarity
+            lv_score = NormLev.similarity(label, targets[i].tolist())
             lv += lv_score
-            if args.debug:
-                print("Ground Truth", ''.join([CHARS[int(x)] for x in targets[i]]))
-                print("Predicted:  ", ''.join([CHARS[int(x)] for x in label]))
-                print('-------------------------------')
-            
-            # Precision: mean true character recognition rate per sequence
-            min_len = min(len(label), len(targets[i]))
-            max_len = max(len(label), len(targets[i]))
-            Acc_2 += np.sum([ x==y for (x, y) in zip(label[:min_len], targets[i][:min_len]) ]) / (max_len * len(preb_labels))
-            
-            # Accuracy: mean true character recognition rate pre sequence
+
+            # Accuracy: fraction of correctly predicted plates 
             if len(label) != len(targets[i]):
                 Tn_1 += 1
                 continue
@@ -166,18 +154,18 @@ def Greedy_Decode_Eval(Net, datasets, args):
             else:
                 Tn_2 += 1
         lv_sim += lv / len(preb_labels)
-        precision += Acc_2
-    precision /= epoch_size
     lv_sim /= epoch_size
     Acc = Tp * 1.0 / (Tp + Tn_1 + Tn_2)
-    print("[Info] Test Accuracy: {} {} [{}:{}:{}:{}]".format(Acc, precision, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Test Accuracy: {} [{}:{}:{}:{}]".format(Acc, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
     print("[Info] Test Levenshtein Similarity: {}".format(lv_sim))
     t2 = time.time()
     print("[Info] Test Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
 
-def show(img, label, target, save_dir=None):
+def visualize_predictions(img, label, target, save_dir=None):
     if not save_dir:
         raise ValueError("Path to save predictions not provided")
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
     img = np.transpose(img, (1, 2, 0))  # C, H, W -->  H, W, C
     img *= 128.
     img += 127.5
@@ -195,25 +183,16 @@ def show(img, label, target, save_dir=None):
     if lb == tg:
         flag = "T"
     
-    # plt.figure(figsize=(img.shape[1], img.shape[0]))
-    plt.imshow(img)
-    # plt.title(F'Predicted plate: {lb}', size=28)
-    plt.title(F'{lb}', size=28)
-    plt.axis('off')
-    save_name = os.path.join(save_dir, F'{tg}.jpg')
-    print(F'Saving predictions to {save_name}')
-    plt.savefig(save_name)
-    return save_name
-
-    # img = cv2.putText(img, lb, (0,16), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (0, 0, 255), 1)
-    # img = cv2ImgAddText(img, lb, (0, 0), textColor='black', textSize=8)
-    # cv2.imwrite('/data/data/nadivd/ocr_predictions.jpg', img)
+    img = cv2ImgAddText(img, lb, (0, 0), textColor=(0, 0, 255), textSize=16)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img_path = os.path.join(save_dir, F'{tg}.jpg')
+    cv2.imwrite(img_path, img)
     # cv2.imshow("test", img)
-    # print("target: ", tg, " ### {} ### ".format(flag), "predict: ", lb)
-    # cv2.waitKey()
-    # cv2.destroyAllWindows()
+    print("target: ", tg, " ### {} ### ".format(flag), "predict: ", lb)
+    cv2.waitKey()
+    cv2.destroyAllWindows()
 
-def cv2ImgAddText(img, text, pos, textColor=(255, 0, 0), textSize=12):
+def cv2ImgAddText(img, text, pos, textColor=(255, 0, 0), textSize=16):
     if (isinstance(img, np.ndarray)):  # detect opencv format or not
         img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img)

@@ -495,6 +495,7 @@ def Greedy_Decode_Eval(Net, datasets, batch_size, args, T_length):
     except ZeroDivisionError:
         Acc = 0
     print("[Info] Accuracy: {} [{}:{}:{}:{}]".format(Acc, Tp, Tn_1, Tn_2, (Tp+Tn_1+Tn_2)))
+    print("[Info] Test Levenshtein Similarity: {}".format(lv_sim))
     t2 = time.time()
     print("[Info] Speed: {}s 1/{}]".format((t2 - t1) / len(datasets), len(datasets)))
     

@@ -64,8 +64,7 @@ def pixelize(img, width, height, factors=(4, 5), p=0.5):
 
 
 class LPRDataLoader(Dataset):
-    def __init__(self, img_dir, imgSize, lpr_max_len, PreprocFun=None, train=True, crop=None):
-        self.crop = crop
+    def __init__(self, img_dir, imgSize, lpr_max_len, PreprocFun=None, train=True):
         self.train = train
         self.img_dir = img_dir
         self.img_paths = []
@@ -87,8 +86,6 @@ class LPRDataLoader(Dataset):
         Image = cv2.imread(filename)  # BGR
         if len(Image.shape) == 2:
             Image = np.repeat(np.expand_dims(Image, axis=-1), 3, axis=-1)
-        if self.crop is not None:
-            Image = Image[:, self.crop:, :]
         height, width, _ = Image.shape
         if height != self.img_size[1] or width != self.img_size[0]:
             Image = cv2.resize(Image, self.img_size)
